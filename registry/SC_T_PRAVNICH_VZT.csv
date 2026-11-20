@@ -1,0 +1,318 @@
+KOD;TPR_KOD;NAZEV;VLASTNICTVI;PRO_OS;PRO_NEMOVITOST;K_OS;K_NEMOVITOSTI;PLATNOST_OD;PLATNOST_DO;CELOSTATNI_PUSOBNOST;TROJVAZBA;SEKCE;SJM;PRO_NADRIZENOU_PO;PODIL_VERITELE;POVINNOST_R_JPV;PRAVO_STAVBY;PORADI;PRSV_OMEZENI_PRAV;PRSV_ZAVISLE_JPV
+1;1;Podíl;n;n;n;a;n;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+2;1;Omezení pøevodu nemovitosti (§ 58 zákona è. 40/1964 Sb.);n;a;n;a;a;01.01.1993;;n;;D;n;n;;n;n;n;;
+3;1;Pùjèka od ÈSTSP;n;n;n;a;a;01.01.1993;21.05.2021;n;;D;n;n;;n;n;;;
+4;1;Pùjèka od organizace;n;n;n;a;a;01.01.1993;21.05.2021;n;;D;n;n;;n;n;;;
+5;1;Pùjèka od obèana;n;n;n;a;a;01.01.1993;21.05.2021;n;;D;n;n;;n;n;;;
+6;1;Pohledávka finanèní správy;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+7;1;Pohledávka justièní správy;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+8;1;Pohledávka penìního ústavu;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+9;1;Pohledávka organizace;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+10;1;Pohledávka obèana;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;;n;n;;;
+11;1;Zahájeno konkursní øízení;n;n;n;a;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+12;1;Pozemky v uívání organizace;n;a;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+13;1;Pozemky v soukromém vlastnictví;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+14;1;Náhradní uívání;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+15;1;Vıkup ze sdruenıch pozemkù;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+16;1;Zahájení vyvlastòovacího øízení;n;n;n;a;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+17;1;Zákaz stavby;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+18;1;Zpìtná koupì objektu;n;n;n;a;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+19;1;Pøislouèena èást cizí parcely;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+20;1;Doèasné uívání za úplatu;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+21;1;Urèení právního vztahu soudem;n;n;n;a;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+22;1;Nájem, vıpùjèka;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+23;1;Návaznost na list vlastnictví;n;a;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+24;2;Duplicitní zápis vlastnictví;a;n;n;n;n;01.01.1993;;n;;2;n;n;;n;n;;;
+25;2;Duplicitní zápis vlastnictví pouze pro vlastníka;n;n;n;a;a;01.01.1993;18.08.2015;n;;D;n;n;;n;n;;;
+26;1;Manel(ka);n;n;n;a;n;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+27;1;Budova na více parcelách;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+28;1;Vlastnictví stavby bez parcelního èísla;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+29;1;Vlastnictví podzemní stavby;n;n;n;n;a;01.01.1993;31.12.1999;n;;D;n;n;;n;n;;;
+30;2;Vlastnické právo;a;n;n;n;n;01.01.1993;;n;;1;n;n;;n;n;;n;
+31;3;Zástavní právo;n;n;n;a;a;01.01.1993;31.12.1999;n;;C;n;n;a;n;n;;;
+32;3;Zástavní právo smluvní;n;a;n;a;a;01.06.1999;;n;O;C;n;a;a;n;n;a;;
+33;3;Zástavní právo zákonné;n;a;n;a;a;01.06.1999;;n;O;C;n;a;a;n;n;a;;
+34;3;Zástavní právo soudcovské;n;a;n;a;a;01.06.1999;;n;O;C;n;a;a;n;n;a;;
+35;4;Podzástavní právo;n;a;n;a;a;01.06.1999;;n;O;C;n;a;a;n;n;a;;
+36;5;Vìcné bøemeno (podle listiny);n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+37;5;Vìcné bøemeno cesty;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+38;5;Vìcné bøemeno chùze;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+39;5;Vìcné bøemeno jízdy;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+40;5;Vìcné bøemeno oprav a údrby;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+41;5;Vìcné bøemeno vedení;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+42;5;Vìcné bøemeno zøízení plotu, zdi;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+43;5;Vìcné bøemeno štítové zdi;n;n;a;n;a;01.01.1993;;n;;C;n;n;;n;n;a;;
+44;5;Vìcné bøemeno spoluuívání;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+45;5;Vìcné bøemeno braní vody;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+46;5;Vìcné bøemeno dolování;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+47;5;Vìcné bøemeno chùze a jízdy;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+48;5;Vìcné bøemeno bytu;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+49;5;Vìcné bøemeno vımìnku;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+50;5;Vìcné bøemeno uívání;n;a;a;n;a;01.01.1993;;n;U;C;n;a;;n;n;a;;
+51;5;Vìcné bøemeno poívání;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+52;5;Vìcné bøemeno povinnosti vyplácet dùchod;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+53;5;Vìcné bøemeno ochrany vodního zdroje;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+54;6;Pøedkupní právo;n;a;n;a;a;01.01.1993;;n;O;C;n;a;;n;n;a;;
+55;2;Vlastnictví jednotek;n;n;n;n;a;01.06.1999;;n;;D;n;n;;n;n;;;
+56;2;Vıstavba domu s jednotkami;n;a;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+57;9;Právo hospodaøení s majetkem státu;a;n;n;n;n;01.01.1993;;n;;3;n;n;;n;n;;;
+58;10;Právo trvalého uívání;a;n;n;n;n;01.01.1993;18.08.2015;n;;4;n;n;;n;n;;;
+59;11;Správa nemovitostí ve vlastnictví státu;a;n;n;n;n;01.06.1999;18.08.2015;n;;3;n;n;;n;n;;;
+60;11;Prozatímní správa;a;n;n;n;n;01.01.1993;18.08.2015;n;;3;n;n;;n;n;;;
+61;16;Národní správa;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+62;12;Oprávnìní hospodaøit s majetkem obce;a;n;n;n;n;01.06.1999;;n;;5;n;n;;n;n;;;
+63;13;Pøíslušnost k organizaèní sloce právnické osoby;a;n;n;n;n;01.06.1999;;n;;6;n;n;;n;n;;;
+64;14;Právo stavby;n;a;a;n;a;01.01.1993;;n;M;C;n;n;;n;n;a;;
+65;15;Závada - právo stavby;n;a;n;n;a;01.01.1993;15.03.2000;n;;C;n;n;;n;n;;;
+66;16;Omezení dispozièních práv;n;n;n;a;a;01.01.1993;;n;;D;n;n;;n;n;;;
+67;17;Právo zpìtné koupì;n;a;n;n;a;01.01.1993;;n;;C;n;a;;n;n;a;;
+68;18;Naøízení vıkonu rozhodnutí prodejem nemovitosti;n;n;n;a;a;01.01.1993;;n;;D;n;n;;n;n;;;
+69;18;Povolení ochranné lhùty v konkursním øízení;n;n;n;a;a;01.01.1993;;n;;D;n;n;;n;n;;;
+70;18;Prohlášení konkursu podle zákona o konkursu a vyrovnání;n;n;n;a;n;01.06.1999;;a;;D;a;n;n;n;n;;;
+71;18;Podanı návrh na vyrovnání;n;n;n;a;a;01.06.1999;;n;;D;n;n;;n;n;;;
+72;18;Naøízení pøedbìného opatøení;n;n;n;a;a;01.06.1999;;n;;D;n;n;;n;n;;;
+73;18;Jiné rozhodnutí, kterım se omezují dispoziè.práva vlastníka;n;n;n;a;a;01.06.1999;;n;;D;n;n;;n;n;;;
+74;18;Podaná aloba;n;a;n;a;a;01.01.1993;;n;O;D;a;a;n;n;n;;;
+75;18;Podaná aloba na urèení vìcného bøemene;n;a;n;n;a;01.06.1999;16.02.2016;n;;D;n;a;;n;n;;;
+76;18;Podaná aloba na urèení vìcného pøedkupního práva;n;a;n;a;a;01.06.1999;16.02.2016;n;O;D;n;a;;n;n;;;
+77;18;Podaná aloba na urèení zástavního práva;n;a;n;a;a;01.06.1999;16.02.2016;n;O;D;n;a;a;n;n;;;
+78;18;Podán návrh na naøíz.vıkonu rozh.zøízením soudc.zástav.práva;n;a;n;a;a;01.06.1999;;n;O;D;n;a;a;n;n;;;
+79;20;Zmìna hranice k.ú.;n;n;n;n;a;01.06.1999;;n;;D;n;n;;n;n;;;
+80;21;Oprava chyby v katastrálním operátu;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+81;25;Zmìna vımìr obnovou operátu;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+82;25;Zmìna èíslování parcel;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+83;26;Námitka vùèi obnovenému katastrálnímu operátu;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+85;37;Zahájeny pozemkové úpravy;n;n;n;n;a;01.01.1993;09.01.2013;n;;D;n;n;;n;n;;;
+86;37;Schválené pozemkové úpravy;n;n;n;n;a;01.01.1993;09.01.2013;n;;C;n;n;;n;n;;;
+87;38;Záznam pro další øízení;n;n;n;a;a;01.01.1993;05.05.2023;n;;D;n;n;;n;n;;;
+88;40;Obnova øízení správního orgánu;n;n;n;a;a;01.01.1993;;n;;D;n;n;;n;n;;;
+89;75;Poskytnutí stát.stavebního pøíspìvku na pozemek;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+90;75;Poskytnutí stát.stavebního pøíspìvku na budovu;n;n;n;n;a;01.01.1993;;n;;D;n;n;;n;n;;;
+91;5;Právo k nemovitosti (podle listiny);n;n;a;n;a;01.01.1993;31.12.2000;n;;B;n;n;;n;n;;;
+92;44;Pøíslušnost hospodaøit s majetkem státu;a;n;n;n;n;05.02.2001;;n;;3;n;n;;n;n;;;
+93;45;Správa nemovitostí ve vlastnictví kraje;a;n;n;n;n;05.02.2001;;n;;3;n;n;;n;n;;;
+94;46;Svìøená správa nemovitostí ve vlastnictví obce;a;n;n;n;n;05.02.2001;;n;;3;n;n;;n;n;;;
+95;46;Správa nemovitostí ve vlastnictví obce;a;n;n;n;n;05.02.2001;;n;;3;n;n;;n;n;;;
+96;46;Hospodaøení s majetkem obce;a;n;n;n;n;05.02.2001;09.04.2009;n;;3;n;n;;n;n;;;
+97;18;Uzavøení smlouvy o provedení draby nedobrovolné;n;n;n;a;a;05.02.2001;;n;;D;n;n;;n;n;;;
+98;18;Podán návrh na naøíz. vıkonu rozh. prodejem nemovitosti;n;n;n;a;a;05.02.2001;;n;;D;n;n;;n;n;;;
+99;18;Podaná aloba na urèení vlastnického práva;n;n;n;a;a;05.02.2001;16.02.2016;n;;D;n;n;;n;n;;;
+100;18;Naøízení vıkonu rozhodnutí prodejem podniku;n;n;n;a;a;05.02.2001;;n;;D;n;n;;n;n;;;
+101;5;Vìcné bøemeno podle § 28d zák.è.42/92 Sb., z.op.è.297/92 Sb.;n;a;n;n;a;05.02.2001;;n;;C;n;a;;n;n;a;;
+102;5;Vìcné bøemeno uívání bytu podle § 27 zák.è. 72/94 Sb.;n;a;n;n;a;05.02.2001;;n;;C;n;n;;n;n;a;;
+103;3;Zástavní právo z rozhodnutí správního orgánu;n;a;n;a;a;18.06.2001;;n;O;C;n;a;a;n;n;a;;
+104;18;Naøízení exekuce;n;n;n;a;n;18.06.2001;;a;;D;a;n;;n;n;;;
+105;18;Exekuèní pøíkaz k prodeji nemovitosti;n;n;n;a;a;18.06.2001;;n;;D;n;n;;n;n;n;;
+106;18;Exekuèní pøíkaz k prodeji podniku;n;n;n;a;a;18.06.2001;;n;;D;n;n;;n;n;n;;
+107;5;Vìcné bøemeno zøizování a provozování vedení;n;a;n;n;a;18.06.2001;;n;;C;n;a;;n;n;a;;
+108;5;Vìcné bøemeno zatìující spoluvlastnickı podíl;n;a;n;a;a;18.06.2001;;n;M;C;n;a;;n;n;a;;
+109;47;Právo hospodaøit s majetkem státu;a;n;n;n;n;18.06.2001;;n;;3;n;n;;n;n;;;
+110;18;Draební vyhláška;n;n;n;a;a;18.06.2001;;n;;D;n;n;;a;n;;;
+111;48;Budova ve více katastrálních územích;n;n;n;n;a;21.09.2001;18.02.2016;n;;D;n;n;;n;n;;;
+112;18;Zapsáno do soupisu konkursní podstaty;n;n;n;a;a;21.09.2001;;n;;D;n;n;;n;n;;;
+113;49;Spoleèná zeï a štít budov podle pozemkové knihy;n;n;a;n;n;21.09.2001;;n;;C;n;n;;n;n;a;;
+114;18;Ustanovení pøedbìného správce;n;n;n;a;n;21.11.2001;;n;;D;n;n;;n;n;;;
+115;2;Vlastnictví zvláštních hmotnıch èástí budovy;a;n;n;n;n;01.01.2002;;n;;2;n;n;;n;n;;;
+116;2;Vlastnictví zvláštní hmotné èásti budovy;n;n;a;a;n;01.01.2002;;n;;;n;n;;n;n;;;
+117;5;Vìcné bøemeno spoluuívání zastavìného pozemku;n;n;a;n;a;01.01.2002;;n;;C;n;n;;n;n;a;;
+118;5;Vìcné bøemeno k vıkonu vlastnického práva ke stavbì;n;a;a;n;a;01.01.2002;;n;U;C;n;a;;n;n;a;;
+119;5;Vìcné bøemeno k nemovitosti z jiného katastrálního území;n;n;a;n;n;01.01.2002;;n;;C;n;n;;n;n;a;;
+120;5;Vìcné bøemeno pro nemovitost z jiného katastrálního území;n;n;n;n;a;01.01.2002;;n;;C;n;n;;n;n;a;;
+121;5;Vìcné bøemeno zøízení plotu;n;a;a;n;a;01.01.2002;;n;U;C;n;a;;n;n;a;;
+122;5;Vìcné bøemeno zøízení zdi;n;a;a;n;a;01.01.2002;;n;U;C;n;a;;n;n;a;;
+123;18;Vylouèeno ze soupisu konkursní podstaty;n;n;n;a;a;13.09.2002;;n;;D;n;n;;n;n;;;
+124;75;Podaná aloba ve vìci vkladu práva k nemovitosti;n;n;n;a;a;08.01.2003;;n;;D;n;n;;n;n;;;
+125;18;Odklad vykonatelnosti rozhodnutí katastrálního úøadu;n;n;n;a;a;08.01.2003;16.02.2016;n;;D;n;n;;n;n;;;
+126;75;Odklad právní moci rozhodnutí katastrálního úøadu;n;n;n;a;a;08.01.2003;16.02.2016;n;;D;n;n;;n;n;;;
+127;18;Naøízení prodeje zástavy;n;n;n;a;a;30.06.2003;20.07.2010;n;;C;n;n;;n;n;;;
+128;18;Naøízení vıkonu rozhodnutí prodejem zástavy;n;n;n;a;a;30.06.2003;;n;;D;n;n;;n;n;;;
+129;75;Omezení pøevodu pozemkù podle § 29 zákona è. 229/1991 Sb.;n;n;n;n;a;30.06.2003;;n;;D;n;n;;n;n;;;
+130;3;Zástavní právo podle dìdické dohody;n;a;n;a;a;30.04.2004;;n;O;C;n;a;a;n;n;a;;
+131;5;Vìcné bøemeno ve prospìch nemovitosti neevidované v katastru;n;n;n;n;a;01.04.2004;;n;;C;n;n;;n;n;a;;
+133;75;Odklad vykonatelnosti rozhodnutí správního orgánu;n;n;n;a;a;19.08.2004;;n;;D;n;n;;n;n;;;
+134;75;Odklad právní moci rozhodnutí správního orgánu;n;n;n;a;a;19.08.2004;;n;;D;n;n;;n;n;;;
+135;18;Naøízení exekuce k nemovitosti;n;n;n;a;a;19.08.2004;;n;;D;n;n;;n;n;;;
+137;18;Zajištìní majetku;n;n;n;a;n;23.05.2005;;a;;D;a;n;n;n;n;;;
+138;18;Zajištìní nemovitosti;n;n;n;a;a;23.05.2005;;n;;D;n;n;a;n;n;;;
+139;18;Zahájené øízení o vyvlastnìní práv;n;a;n;a;a;16.03.2007;;n;O;D;n;a;n;n;n;;;
+140;6;Pøedkupní právo podle § 101 zákona è. 183/2006 Sb.;n;a;n;a;a;16.03.2007;;n;O;C;n;a;n;n;n;a;;
+141;5;Vìcné bøemeno umístìní a provoz. elektrorozvodného zaøízení;n;a;n;n;a;04.06.2007;;n;;C;n;a;n;n;n;a;;
+142;5;Vìcné bøemeno elektric.vedení a oprávnìní (zák.è.79/1957 Sb);n;a;n;n;a;04.06.2007;;n;;C;n;a;n;n;n;a;;
+143;2;Vlastnické právo podílníkù;a;n;n;n;n;02.08.2007;;n;;1;n;n;a;n;n;;n;
+144;30;Obhospodaøování majetku v podílovém fondu;a;n;n;n;n;02.08.2007;;n;;3;n;n;n;n;n;;;
+145;18;Rozhodnutí o úpadku (§ 136 odst. 1 insolvenèního zákona);n;n;n;a;n;02.01.2008;;a;;D;a;n;a;n;n;;;
+146;18;Prohlášení konkursu podle insolvenèního zákona;n;n;n;a;n;02.01.2008;;a;;D;a;n;a;a;n;;;
+147;18;Zákaz nakládat s celou majetkovou podstatou;n;n;n;a;n;02.01.2008;;a;;D;a;n;a;n;n;;;
+148;18;Zákaz nakládat s èástí majetkové podstaty;n;n;n;a;a;02.01.2008;;n;;D;a;n;a;n;n;;;
+149;18;Nakládat s majet.podst.jen se souhl. správce dle insolv.zák.;n;n;n;a;n;02.01.2008;;a;;D;a;n;a;n;n;;;
+150;18;Nakládat s èástí maj.podst.jen se souhl.správce dle ins.zák.;n;n;n;a;a;02.01.2008;;n;;D;a;n;a;n;n;;;
+151;18;Nakládat s majet. podstatou jen se souhlasem insolv. správce;n;n;n;a;n;02.01.2008;24.04.2008;a;;;a;n;a;n;n;;;
+152;18;Nakládat s èástí maj. podst. jen se souhlasem insol. správce;n;n;n;a;a;02.01.2008;24.04.2008;n;;;a;n;a;n;n;;;
+153;18;Zapsáno do soupisu majetkové podstaty (zák. è. 182/2006 Sb.);n;n;n;a;a;02.01.2008;;n;;D;a;n;a;n;n;;;
+154;18;Schváleno oddluení;n;n;n;a;a;24.04.2008;;n;;D;a;n;a;a;n;;;
+155;75;Funkèní celek s vlastnictvím jednotky;n;n;a;n;a;24.04.2008;;n;;D;n;n;a;n;n;;;
+156;5;Oprávnìní z vìcného bøemene pøevzaté z pozemkové knihy;n;n;a;n;n;17.07.2008;;n;;C;n;n;n;n;n;;;
+157;5;Vìcné bøemeno pøevzaté z pozemkové knihy;n;n;n;n;a;17.07.2008;;n;;C;n;n;n;n;n;a;;
+158;75;Upozornìní na související údaje katastru nem. k nemovitosti;n;n;n;n;a;17.07.2008;;n;;D;n;n;n;n;n;;;
+159;75;Upozornìní na související údaje katastru nem. pro nemovitost;n;n;a;n;n;17.07.2008;;n;;D;n;n;n;n;n;;;
+160;45;Hospodaøení se svìøenım majetkem kraje;a;n;n;n;n;09.04.2009;;n;;3;n;n;a;n;n;;;
+161;46;Hospodaøení se svìøenım majetkem obce;a;n;n;n;n;09.04.2009;;n;;3;n;n;a;n;n;;;
+162;75;Upozornìní na spornou hranici mezi pozemky;n;n;n;n;a;07.08.2009;;n;;D;n;n;n;n;n;;;
+163;3;Zástavní právo exekutorské podle § 69a exekuèního øádu;n;a;n;a;a;02.11.2009;;n;O;C;n;a;a;n;n;a;;
+164;75;Nepravomocnı exekuèní pøíkaz o zøízení zástav. práva doruèen;n;a;n;a;a;08.11.2010;16.02.2016;n;O;D;n;n;a;n;n;;;
+165;18;Zahájení úpadkového øízení (èl.22 naøíz.Rady EU è.1346/2000);n;n;n;a;n;25.02.2011;;a;;D;a;n;a;n;n;;;
+166;75;Zahájena obnova katastrálního operátu;n;n;n;n;a;19.07.2011;;n;;D;n;n;n;n;n;;;
+167;2;Duplicitní zápis hospodaøení s majetkem ÈR;a;n;n;n;n;20.12.2011;;n;;3;n;n;n;n;n;;;
+168;18;Poznámka spornosti;n;a;n;a;a;01.01.2012;;n;O;D;a;a;n;n;n;;;
+169;18;Exekuèní pøíkaz k postiení podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;n;;
+170;18;Zahájení exekuce;n;n;n;a;n;01.01.2013;;a;;D;a;n;n;n;n;;;
+171;18;Exekuce na èást majetku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;n;;
+172;18;Exekuèní pøíkaz ke správì nemovitosti;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;n;;
+173;18;Pokraèování exekuce správou podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;a;n;;;
+174;18;Pokraèování exekuce prodejem podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;a;n;;;
+175;18;Naøízení vıkonu rozhodnutí postiením podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;;;
+176;18;Naøízení vıkonu rozhodnutí správou nemovitosti;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;;;
+177;18;Pokraèování vıkonu rozhodnutí správou podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;a;n;;;
+178;18;Pokraèování vıkonu rozhodnutí prodejem podniku;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;a;n;;;
+179;18;Podán návrh na naøíz. vıkonu rozh. správou nemovitosti;n;n;n;a;a;01.01.2013;;n;;D;a;n;n;n;n;;;
+180;18;Zahájeny pozemkové úpravy;n;n;n;a;a;09.01.2013;;n;;D;a;n;n;n;n;;;
+181;18;Schválené pozemkové úpravy;n;n;n;a;a;09.01.2013;;n;;D;a;n;n;n;n;;;
+182;18;Pozemek urèen pro realizaci spol. zaø.dle zák.è. 139/2002Sb.;n;n;n;a;a;09.01.2013;;n;;D;a;n;n;n;n;;;
+183;18;Podaná ádost o rozhodnutí spr. org. pro monı záznam práva;n;n;n;a;a;09.01.2013;;n;;D;a;a;n;n;n;;;
+184;75;Omezení pøevodu nemovitostí podle § 13 zákona è.428/2012 Sb.;n;n;n;a;a;20.05.2013;;n;;D;a;n;n;n;n;;;
+185;3;Budoucí zástavní právo;n;a;n;a;a;07.01.2014;;n;O;C;n;a;a;n;n;a;n;n
+186;86;Vıhrada vlastnického práva;n;a;n;a;a;07.01.2014;;n;O;C;n;a;n;n;n;a;n;n
+187;86;Vıhrada práva zpìtné koupì;n;a;n;a;a;07.01.2014;;n;O;C;n;a;a;n;n;a;n;n
+188;86;Vıhrada práva zpìtného prodeje;n;a;a;a;n;07.01.2014;;n;O;B;n;a;n;n;n;a;n;a
+189;86;Vıhrada práva lepšího kupce;n;a;n;a;a;07.01.2014;24.01.2023;n;O;C;n;a;n;n;n;a;n;n
+190;82;Právo stavby podle zák. è. 89/2012 Sb.;n;a;n;n;a;07.01.2014;;n;U;C;n;a;n;n;a;a;n;n
+191;83;Budoucí vımìnek;n;a;n;a;a;07.01.2014;;n;O;C;n;n;n;n;n;a;n;n
+192;75;Vznik spoleèenství vlastníkù prokázán;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;n;n;n;n;n
+193;85;Svìøenskı správce;a;a;n;n;a;07.01.2014;;n;U;3;n;n;n;n;n;n;n;n
+194;85;Spravovanı svìøenskı fond;a;a;n;n;a;07.01.2014;;n;U;1;n;n;n;n;n;n;n;n
+195;87;Zákaz zcizení nebo zatíení;n;a;n;a;a;07.01.2014;12.02.2019;n;O;C;n;a;n;n;n;a;n;n
+196;88;Ujednání o koupi na zkoušku s odkládací podmínkou;n;a;n;a;a;07.01.2014;16.02.2016;n;U;C;n;n;n;n;n;a;n;n
+197;89;Nájem;n;a;n;n;a;07.01.2014;;n;U;C;n;a;n;n;n;a;n;n
+198;90;Pacht;n;a;n;n;a;07.01.2014;;n;U;C;n;a;n;n;n;a;n;n
+199;91;Vzdání se práva na náhradu škody na pozemku;n;a;n;a;a;07.01.2014;;n;O;C;n;a;n;n;n;a;n;n
+200;18;Vıhrada, e upevnìnı stroj není souèástí nemovitosti;n;a;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+201;18;Dovolání se neúèinnosti právního jednání;n;a;n;a;a;07.01.2014;;n;O;D;n;n;n;n;n;n;n;n
+202;18;Vıhrada pøednostního poøadí pro jiné právo;n;n;n;a;a;07.01.2014;;n;U;D;n;n;n;a;n;n;n;n
+203;18;Pøednostní právo ke zøízení vìcného práva pro jinou osobu;n;a;n;a;a;07.01.2014;;n;O;D;n;a;n;n;n;n;n;n
+204;18;Odklad zrušení spoluvlastnictví;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+205;18;Odklad oddìlení ze spoluvlastnictví;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+206;18;Vlastník pozemku nemá pøedkupní právo k právu stavby;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+207;18;Vlastník práva stavby nemá pøedkupní právo k pozemku;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+208;18;Vıhrada souhlasu se zatíením práva stavby;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+209;18;Závazek nezajistit zást. pr. ve vıhodnìjším poøadí novı dluh;n;a;n;n;a;07.01.2014;;n;U;D;n;a;n;a;n;n;n;n
+210;18;Závazek neumonit zápis nového zást. práva namísto starého;n;a;n;n;a;07.01.2014;;n;U;D;n;a;n;a;n;n;n;n
+211;18;Stavba není souèástí pozemku;n;a;n;n;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+212;18;Zapoèetí vıkonu zástavního práva;n;n;n;n;a;07.01.2014;05.06.2019;n;U;D;n;n;n;a;n;n;n;n
+213;18;Ujednání poøadí zástavních práv;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;a;n;n;n;n
+214;18;Uvolnìní zástavního práva;n;n;n;n;a;07.01.2014;;n;U;D;n;n;n;a;n;n;n;n
+215;18;Svìøenské nástupnictví;n;a;n;a;a;07.01.2014;;n;O;D;n;n;n;n;n;n;n;n
+216;18;Zákaz nakládat s nemovitostí;n;n;n;a;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+217;18;Doèasná povaha vìcného práva na základì zajišovac. pøevodu;n;n;n;a;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+218;18;Pøedání údaje o nemovitosti do evidence ÚZSVM;n;n;n;a;a;07.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+219;18;Omezení - poskytnutí podpory z veøejnıch prostøedkù;n;a;n;a;a;07.01.2014;;n;O;D;n;a;n;n;n;n;n;n
+220;88;Ujednání o koupi na zkoušku s rozvazovací podmínkou;n;a;a;a;n;07.01.2014;;n;O;B;n;a;n;n;n;a;n;a
+221;2;Pøídatné spoluvlastnictví;a;n;n;n;n;07.01.2014;;n;;1;n;n;n;n;n;n;a;n
+222;2;Podíl na nemovitosti v pøídatném spoluvlastnictví;n;n;a;n;a;07.01.2014;;n;;B;n;n;n;n;n;n;a;n
+223;75;Doloení vzniku spoleèenství vlastníkù do dne;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;n;n;n;n;n
+224;92;Úplné znìní prohlášení o vymezení jednotek ve sbírce listin;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;n;n;n;n;n
+225;92;Dohoda spoluvlastníkù o správì nemovitosti ve sbírce listin;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;n;n;n;n;n
+226;75;Závazek zástavního vìøitele nepoádat o vımaz zástav. práva;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;a;n;n;n;n
+227;75;Podaná aloba o urèení hranice mezi pozemky;n;n;n;n;a;17.01.2014;;n;;D;a;n;n;n;n;n;n;n
+228;18;Draební vyhláška v rámci likvidace dìdictví;n;n;n;a;a;20.01.2014;;n;U;D;n;n;n;n;n;n;n;n
+229;18;Draební vyhláška v rámci další èinnosti exekutora;n;n;n;a;a;21.02.2014;;n;U;D;n;n;n;n;n;n;n;n
+230;87;Zákaz zcizení;n;a;n;a;a;27.02.2014;;n;O;C;n;a;n;n;n;a;n;n
+231;87;Zákaz zatíení;n;a;n;a;a;27.02.2014;;n;O;C;n;a;n;n;n;a;n;n
+232;85;Zakladatel svìøenského fondu;n;a;n;n;a;26.03.2014;05.05.2023;n;U;D;n;n;n;n;n;n;n;n
+233;5;Vìcné bøemeno zatìující nemovitost neevidovanou v katastru;n;n;a;n;n;03.04.2014;;n;U;C;n;n;n;n;n;a;n;n
+234;85;Doba trvání svìøenského fondu;n;n;n;n;a;05.05.2014;;n;U;D;n;n;n;n;n;n;n;n
+235;75;Spoleèenství vlastníkù zaloeno podle § 1200 obè.zák.;n;n;n;n;a;15.05.2014;;n;U;D;a;n;n;n;n;n;n;n
+236;75;Povinnost prokázat vznik spoleèenství vlastníkù nejpozdìji;n;n;n;n;a;15.05.2014;;n;U;D;a;n;n;n;n;n;n;n
+237;87;Zákaz zcizení a zatíení;n;a;n;a;a;28.05.2014;;n;O;C;n;a;n;n;n;a;n;n
+238;3;Zástavní právo k vìci, která je souèástí zastaveného závodu;n;a;n;a;a;08.07.2014;;n;O;C;n;a;a;n;n;a;n;n
+239;18;Exekuèní pøíkaz k postiení závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;n;n;n;n;n
+240;18;Pokraèování exekuce správou závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;a;n;n;n;n
+241;18;Pokraèování exekuce prodejem závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;a;n;n;n;n
+242;18;Naøízení vıkonu rozhodnutí postiením závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;n;n;n;n;n
+243;18;Pokraèování vıkonu rozhodnutí správou závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;a;n;n;n;n
+244;18;Pokraèování vıkonu rozhodnutí prodejem závodu;n;n;n;a;a;28.07.2014;;n;;D;a;n;n;a;n;n;n;n
+245;3;Uvolnìné zástavní právo;n;n;n;a;a;31.07.2014;;n;;C;n;a;a;n;n;a;n;n
+246;75;Údaje o vlastníku pøedány soudu s ádostí o projed. dìdictví;n;n;n;a;n;08.09.2014;;a;;D;a;n;n;n;n;n;n;n
+247;18;Zákaz zøídit zástavní právo k nemovitosti;n;n;n;a;a;22.10.2014;;n;U;D;n;n;n;n;n;n;n;n
+248;75;Údaje o vlastníku pøedány;n;n;n;a;n;20.11.2014;;a;;D;a;n;n;n;n;n;n;n
+249;75;Samostatná stavba;n;n;n;n;a;12.03.2015;;n;;D;a;n;n;n;n;n;n;n
+250;18;Poøadí na základì vıhrady pøednostního poøadí;n;n;n;n;a;08.06.2015;;n;U;D;n;n;n;a;n;n;n;n
+251;75;Inhibitoria se neuplatní;n;n;n;n;a;08.06.2015;;n;U;D;n;n;n;a;n;n;n;n
+252;18;Podán návrh na zøízení exekutorského zástavního práva;n;a;n;a;a;16.06.2015;;n;O;D;n;a;a;n;n;n;n;n
+253;3;Zástavní právo exekutorské podle § 73a exekuèního øádu;n;a;n;a;a;17.06.2015;;n;O;C;n;a;a;n;n;a;n;n
+254;75;Zapsáno do seznamu likvidaèní podstaty pozùstalosti;n;n;n;a;a;24.08.2015;;n;;D;n;n;a;n;n;n;n;n
+255;75;Podaná aloba na urèení odvozeného práva;n;a;n;a;a;25.09.2015;;n;O;D;a;a;n;n;n;n;n;n
+256;75;Údaje o osobì pøedány ÚZSVM;n;n;n;a;a;25.09.2015;;n;;D;a;n;n;n;n;n;n;n
+257;75;MCP: manelé cizího práva;n;n;n;a;n;14.10.2015;;a;;D;a;n;n;n;n;n;n;n
+258;84;Majetek v podfondu;a;n;n;n;n;14.10.2015;;n;;3;n;n;n;n;n;n;n;n
+259;75;Spojení exekucí ke spoleènému øízení;n;n;n;n;a;25.01.2016;;n;;D;a;n;n;a;n;n;n;n
+260;75;Zajištìní pohledávky ve vìcech trestních;n;n;n;n;a;29.01.2016;;n;;D;a;n;n;a;n;n;n;n
+261;95;Zápis se tıká pouze pozemku;n;n;n;n;a;02.02.2016;;n;;D;a;n;n;a;n;n;n;n
+262;6;Pøedkupní právo zcizitelné;n;a;n;a;a;16.02.2016;;n;O;C;n;a;n;n;n;a;n;n
+263;86;Vıhrada práva zpìtné koupì zcizitelná;n;a;n;a;a;16.02.2016;;n;O;C;n;a;a;n;n;a;n;n
+264;18;Rezerva státních pozemkù (§3 odst.1 písm.b) z.è.503/2012Sb.);n;n;n;a;a;01.08.2016;;n;U;D;n;n;n;n;n;n;n;n
+265;96;Nesoulad druhu pozemku se skuteènım stavem;n;n;n;n;a;24.03.2017;;n;U;;n;n;n;n;n;n;n;n
+266;96;Nesoulad zpùsobu vyuití pozemku se skuteènım stavem;n;n;n;n;a;24.03.2017;;n;U;;n;n;n;n;n;n;n;n
+267;96;Nesoulad zpùsobu vyuití stavby se skuteènım stavem;n;n;n;n;a;24.03.2017;;n;U;;n;n;n;n;n;n;n;n
+268;96;Nesoulad zobrazení obvodu budovy se skuteènım stavem;n;n;n;n;a;24.03.2017;;n;U;;n;n;n;n;n;n;n;n
+269;96;Nesoulad se skuteènım stavem;n;n;n;n;a;24.03.2017;;n;U;;n;n;n;n;n;n;n;n
+270;75;Podané dovolání ve vìci, o které se zapisuje poz. spornosti;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+271;75;Podané dovolání ve vìci podle § 23 odst.1 písm. o) kat. zák.;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+272;75;Podaná úst. stínost ve vìci, o které se zapis. poz. sporn.;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+273;75;Podaná úst. stínost ve vìci podle § 23 odst.1 písm.o) kat.z;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+274;75;Podaná aloba proti rozhodnutí o opravì chyby;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+275;75;Podaná aloba proti rozhod. o námitce proti obnov. kat. op.;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+276;75;Podaná kasaèní stínost ve vìci opravy chyby;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+277;75;Podaná kasaèní stínost ve vìci námitky proti obnov.kat. op.;n;n;n;a;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+278;75;Pozemek se nachází v dobıvacím prostoru;n;n;n;n;a;01.04.2017;;n;;D;a;n;n;n;n;n;n;n
+279;96;Nesoulad se skuteènım stavem - nezapsaná stavba;n;n;n;n;a;24.04.2017;;n;U;;n;n;n;n;n;n;n;n
+280;18;Vzdání se pøedkupního práva spoluvlastníka;n;n;n;a;a;01.01.2018;05.05.2023;n;U;D;n;n;n;n;n;n;n;n
+281;18;Zahájení insolvenèního øízení (èl.29 naøízení EU è.2015/848);n;n;n;a;n;19.07.2017;;a;;D;a;n;a;n;n;n;n;n
+282;75;Pøizpùsobení vìcného práva dle èl. 31 naøízení EU è.650/2012;n;n;n;a;a;16.02.2018;;n;;C;n;n;n;a;n;n;n;n
+283;3;Zástavní právo pøepsané z pozemkové knihy;n;a;n;a;a;22.02.2018;;n;;C;n;a;n;n;n;a;n;n
+284;2;Majetek transformovaného penzijního fondu;a;n;n;n;n;16.08.2018;;n;;1;n;n;n;n;n;n;n;n
+285;51;Obhospodaøovatel majetku v transformovaném penzijním fondu;a;n;n;n;n;16.08.2018;;n;;3;n;n;n;n;n;n;n;n
+286;3;Zástavní právo pro pohledávku majitelù dílèích dlu. úpisù;n;n;n;a;a;22.01.2019;;n;;C;n;a;n;n;n;a;n;n
+287;87;Zákaz zcizení ze závìti (§ 1569 odst. 2 obè. zák.);n;n;n;a;a;12.02.2019;;n;O;C;n;a;n;n;n;a;n;n
+288;87;Zákaz zatíení ze závìti (§ 1569 odst. 2 obè. zák.);n;n;n;a;a;12.02.2019;;n;O;C;n;a;n;n;n;a;n;n
+289;87;Zákaz zcizení a zatíení ze závìti (§ 1569 odst.2 obè. zák.);n;n;n;a;a;12.02.2019;;n;O;C;n;a;n;n;n;a;n;n
+290;18;Zapoèetí vıkonu zást. práva dle obè. zák.;n;n;n;n;a;12.04.2019;;n;U;D;n;n;n;a;n;n;n;n
+291;18;Zapoèetí vıkonu zást. práva dle zák. o spotø. úvìru;n;n;n;n;a;12.04.2019;;n;U;D;n;n;n;a;n;n;n;n
+292;96;Nesoulad skuteèného stavu s vısledky pozemkovıch úprav;n;n;n;n;a;10.02.2020;;n;U;;n;n;n;n;n;n;n;n
+293;18;Spoleèné zaøízení ve veøejném zájmu;n;n;n;a;a;14.01.2021;;n;U;D;n;n;n;n;n;n;n;n
+294;18;Zákaz zmìny druhu nebo zp. vyuití pozemku bez souhlasu SPÚ;n;n;n;a;a;14.01.2021;;n;U;D;n;n;n;n;n;n;n;n
+295;75;Pøizpùsobení vìcného práva dle èl.29 naøízení EU è.2016/1103;n;n;n;n;a;06.08.2021;;n;;C;n;n;n;a;n;n;n;n
+296;75;Pøizpùsobení vìcného práva dle èl.29 naøízení EU è.2016/1104;n;n;n;n;a;06.08.2021;;n;;C;n;n;n;a;n;n;n;n
+297;18;Vydání rozhodnutí o zøízení zást. práva zdravot. pojišovnou;n;a;n;a;a;12.01.2022;;n;;D;n;n;n;n;n;n;n;n
+298;3;Zástavní právo z rozhodnutí zdravotní pojišovny;n;a;n;a;a;12.01.2022;;n;O;C;n;a;a;n;n;a;n;n
+299;75;Spoleèná èást nemovité vìci;n;n;a;n;a;22.06.2022;;n;;D;n;n;a;n;n;n;n;n
+300;75;Vlastník vyzván k doloení identifikaèních údajù;n;n;n;a;n;04.10.2022;;a;;D;a;n;n;n;n;n;n;n
+301;75;Podané dovolání proti rozh.soudu o alobì dle § 18 odst.5 KZ;n;n;n;a;a;24.01.2023;;n;;D;a;n;n;n;n;n;n;n
+302;75;Podaná úst.stín.proti rozh.soudu o alobì dle §18 odst.5 KZ;n;n;n;a;a;24.01.2023;;n;;D;a;n;n;n;n;n;n;n
+303;75;Jednotka je v souladu s povolením nebo kolaudací dle stav.z.;n;n;n;n;a;24.01.2023;;n;;D;n;n;n;n;n;n;n;n
+304;75;Probíhá øízení o pozùstalosti;n;n;n;a;a;24.01.2023;;n;;D;n;n;n;n;n;n;n;n
+305;86;Vıhrada práva lepšího kupce s odkládací podmínkou;n;a;n;a;a;24.01.2023;;n;O;C;n;a;n;n;n;a;n;a
+306;86;Vıhrada práva lepšího kupce s rozvazovací podmínkou;n;a;n;a;a;24.01.2023;;n;O;C;n;a;n;n;n;a;n;a
+307;88;Ujednání o koupi na zkoušku s odkládací podmínkou;n;a;n;a;a;24.01.2023;;n;O;C;n;a;n;n;n;n;n;a
+308;75;Vlastník nemovitosti vyzván k doloení identifikaèních údajù;n;n;n;a;a;07.07.2023;;n;U;D;n;n;n;n;n;n;n;n
+309;75;Údaje o vlastníku nem. pøedány soudu k projednání dìdictví;n;n;n;a;a;07.07.2023;;n;U;D;n;n;n;n;n;n;n;n
+310;3;Zmìna zástavního práva smluvního;n;a;n;a;a;14.10.2024;;n;O;C;n;a;a;a;n;a;n;n
+311;5;Zmìna vìcného bøemene;n;a;a;n;a;14.10.2024;;n;O;C;n;a;n;a;n;a;n;n
+312;87;Zmìna zákazu zcizení a zatíení;n;a;n;a;a;14.10.2024;;n;O;C;n;a;n;a;n;a;n;n
+313;87;Zmìna zákazu zcizení;n;a;n;a;a;14.10.2024;;n;O;C;n;a;n;a;n;a;n;n
+314;87;Zmìna zákazu zatíení;n;a;n;a;a;14.10.2024;;n;O;C;n;a;n;a;n;a;n;n
+315;18;Poznámka o uzavøení smlouvy o provedení nucené draby;n;n;n;a;a;01.01.2025;;n;O;D;n;n;n;n;n;n;n;n
+316;18;Právo uívání nebo poívání bez zápisu vkladem;n;a;n;a;a;09.12.2024;;n;O;D;n;n;n;n;n;n;n;n
+317;18;Chránìnı majetek veøejné kulturní instituce;n;n;n;a;a;24.02.2025;;n;O;D;n;n;n;n;n;n;n;n
+318;3;Zástavní právo z rozhodnutí soudu;n;a;n;a;a;04.03.2025;;n;O;C;n;a;a;n;n;a;n;n
+319;75;Rozhodnutí o povolení zámìru (127/2005 Sb., 458/2000 Sb.);n;n;n;n;a;26.08.2025;;n;;D;n;n;n;n;n;n;n;n
+320;6;Zmìna pøedkupního práva;n;a;n;a;a;18.11.2026;;n;O;C;n;a;n;a;n;a;n;n

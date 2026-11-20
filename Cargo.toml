@@ -1,0 +1,48 @@
+[package]
+name = "wsdp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Async high-level client for ČÚZK WSDP real-estate cadastre services"
+license = "MIT"
+repository = "https://github.com/interaso/wsdp"
+documentation = "https://docs.rs/wsdp"
+readme = "README.md"
+keywords = ["cuzk", "wsdp", "cadastre", "czech", "soap"]
+categories = ["api-bindings"]
+exclude = ["/PLAN.md", "/registry", "/schemas"]
+
+[features]
+default = []
+serde = ["dep:serde", "rust_decimal/serde"]
+tracing = ["dep:tracing"]
+
+[dependencies]
+base64 = "0.23"
+bytes = "1"
+futures-util = "0.3"
+getrandom = "0.4"
+jiff = "0.2"
+mime = "0.3"
+quick-xml = "0.42"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream"] }
+roxmltree = "0.21"
+rust_decimal = "1.43"
+secrecy = "0.10"
+serde = { version = "1", optional = true, features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = { version = "0.1", optional = true, default-features = false, features = ["attributes", "std"] }
+zip = { version = "9.8", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "time"] }
+wiremock = "0.6"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"

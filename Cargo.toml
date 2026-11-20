@@ -10,7 +10,7 @@ documentation = "https://docs.rs/wsdp"
 readme = "README.md"
 keywords = ["cuzk", "wsdp", "cadastre", "czech", "soap"]
 categories = ["api-bindings"]
-exclude = ["/PLAN.md", "/registry", "/schemas"]
+exclude = ["/registry", "/schemas"]
 
 [features]
 default = []

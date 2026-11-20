@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{MessageLevel, ServiceMessage};
+use crate::{MessageCode, MessageLevel, ServiceMessage};
 
 /// Lifecycle stage associated with a report-scoped failure.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -46,12 +46,17 @@ impl ServiceError {
         &self.messages
     }
 
-    /// Returns the first application-error code, if present.
-    pub fn code(&self) -> Option<&str> {
+    /// Returns the first application-error code as a typed, raw-preserving value.
+    pub fn message_code(&self) -> Option<&MessageCode> {
         self.messages
             .iter()
             .find(|message| message.level == MessageLevel::Error)
-            .map(|message| message.code.as_str())
+            .map(|message| &message.code)
+    }
+
+    /// Returns the first application-error code as a string, if present.
+    pub fn code(&self) -> Option<&str> {
+        self.message_code().map(|code| code.as_str())
     }
 }
 
@@ -467,6 +472,10 @@ mod tests {
             text: "sensitive server detail".to_owned(),
         }]);
         assert_eq!(error.code(), Some("310"));
+        assert_eq!(
+            error.message_code(),
+            Some(&MessageCode::ResultLimitExceeded)
+        );
         assert!(!error.to_string().contains("sensitive"));
         assert_eq!(error.messages().len(), 1);
     }

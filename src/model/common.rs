@@ -119,6 +119,10 @@ pub enum MessageCode {
     NoData,
     /// Concurrent-user limit exceeded (`477`).
     ConcurrentUsersExceeded,
+    /// Simultaneous formatted and XML output is not allowed for this report type (`527`).
+    CombinedFormattedAndXmlNotAllowed,
+    /// Simultaneous formatted and XML output is not currently available (`538`).
+    CombinedFormattedAndXmlUnavailable,
     /// A code unknown to this crate version.
     Other(String),
 }
@@ -138,6 +142,8 @@ impl MessageCode {
             "310" => Self::ResultLimitExceeded,
             "392" => Self::NoData,
             "477" => Self::ConcurrentUsersExceeded,
+            "527" => Self::CombinedFormattedAndXmlNotAllowed,
+            "538" => Self::CombinedFormattedAndXmlUnavailable,
             _ => Self::Other(raw),
         }
     }
@@ -151,6 +157,8 @@ impl MessageCode {
             Self::ResultLimitExceeded => "310",
             Self::NoData => "392",
             Self::ConcurrentUsersExceeded => "477",
+            Self::CombinedFormattedAndXmlNotAllowed => "527",
+            Self::CombinedFormattedAndXmlUnavailable => "538",
             Self::Other(raw) => raw,
         }
     }
@@ -485,6 +493,16 @@ mod tests {
             ("+000310", MessageCode::ResultLimitExceeded, "310"),
             ("000392", MessageCode::NoData, "392"),
             ("000477", MessageCode::ConcurrentUsersExceeded, "477"),
+            (
+                "000527",
+                MessageCode::CombinedFormattedAndXmlNotAllowed,
+                "527",
+            ),
+            (
+                "+000538",
+                MessageCode::CombinedFormattedAndXmlUnavailable,
+                "538",
+            ),
         ] {
             let code = MessageCode::from_raw(raw);
             assert_eq!(code, expected);
@@ -495,7 +513,15 @@ mod tests {
             MessageCode::from_raw(many_zeroes),
             MessageCode::ResultLimitExceeded
         );
-        for raw in ["999999999999999999999", " +000999 ", "31 0", "-310", "+"] {
+        for raw in [
+            "579",
+            "000579",
+            "999999999999999999999",
+            " +000999 ",
+            "31 0",
+            "-310",
+            "+",
+        ] {
             let code = MessageCode::from_raw(raw);
             assert_eq!(code, MessageCode::Other(raw.to_owned()));
             assert_eq!(code.as_str(), raw);

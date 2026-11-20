@@ -27,7 +27,7 @@ The [registry index](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z
 
 ## Trial
 
-The [official trial page](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z-KN/Dalkovy-pristup/Webove-sluzby-DP-na-zkousku.aspx), updated 2026-10-23, documents the endpoint, shared account types, sample data, and limitations. Public trial credentials are recorded in `PLAN.md`; live tests read them from the environment and never use production implicitly.
+The [official trial page](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z-KN/Dalkovy-pristup/Webove-sluzby-DP-na-zkousku.aspx), updated 2026-10-23, documents the endpoint, shared account types, sample data, limitations, and shared public credentials. Live tests read credentials from the environment and never use production implicitly.
 
 ## Monthly price data
 

@@ -3,7 +3,6 @@
 //! Credentials and selectors come only from the environment. No owner data,
 //! report IDs, credentials, or report contents are printed.
 
-use std::collections::HashSet;
 use std::io;
 
 use wsdp::{
@@ -200,79 +199,5 @@ async fn parcel_and_building_xml_lifecycles_within_charge_caps()
     println!(
         "production parcel/building XML lifecycles passed within the 50 CZK per-report and total caps"
     );
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore = "uses production credentials for parcel PDF+XML generation but never downloads"]
-async fn parcel_pdf_with_xml_generation_without_download() -> Result<(), Box<dyn std::error::Error>>
-{
-    if !enabled()? {
-        eprintln!("skipping production test: set WSDP_RUN_PRODUCTION_TESTS=1 explicitly");
-        return Ok(());
-    }
-    let parcel_id = ParcelId::new(required("WSDP_PRODUCTION_PARCEL_ID")?)?;
-    let client = production_client()?;
-    let request = GenerateReport::ParcelInfo(ParcelInfoRequest::new(
-        ParcelSelector::Id(parcel_id),
-        ReportOptions::pdf_with_xml(AccountContext::Paying),
-    ));
-    let batch = match client.generate_report(request).await {
-        Ok(response) => response.value,
-        Err(Error::Service(error)) if error.code() == Some("527") => {
-            println!("production parcel PDF+XML generation was rejected with service 527");
-            return Ok(());
-        }
-        Err(error) => return Err(error.into()),
-    };
-
-    let mut created_ids = Vec::new();
-    let mut seen = HashSet::new();
-    for report in batch.reports {
-        if seen.insert(report.id.clone()) {
-            created_ids.push(report.id);
-        }
-        if let Some(parent) = report.parent_id
-            && seen.insert(parent.clone())
-        {
-            created_ids.push(parent);
-        }
-        for child in report.child_ids {
-            if seen.insert(child.clone()) {
-                created_ids.push(child);
-            }
-        }
-    }
-
-    // Status checks are free. Discover late relationships before cleanup, but
-    // deliberately do not approve or dispatch any potentially charged download.
-    let mut result: wsdp::Result<()> = async {
-        let mut index = 0;
-        while index < created_ids.len() {
-            let id = created_ids[index].clone();
-            index += 1;
-            let ready = client.wait_for_report(&id, WaitOptions::default()).await?;
-            if let Some(parent) = ready.value.parent_id
-                && seen.insert(parent.clone())
-            {
-                created_ids.push(parent);
-            }
-            for child in ready.value.child_ids {
-                if seen.insert(child.clone()) {
-                    created_ids.push(child);
-                }
-            }
-        }
-        Ok(())
-    }
-    .await;
-    for id in &created_ids {
-        let cleanup = client.delete_report(id).await;
-        if result.is_ok() {
-            result = cleanup.map(|_| ());
-        }
-    }
-    result?;
-    println!("production parcel PDF+XML generation succeeded; no output was downloaded");
     Ok(())
 }

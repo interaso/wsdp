@@ -112,6 +112,7 @@ Applications may apply bounded backoff to idempotent searches, code lists, and s
 ### Payloads and account restrictions
 
 - Unknown dynamic codes and future protocol values use raw-preserving `Other` variants. Unknown coded and legacy name-only relations both have `is_ownership() == None`.
+- `ServiceError::message_code()` exposes typed known codes, including combined formatted/XML rejections 527 and 538. Unknown codes remain `MessageCode::Other(String)` with untouched text; `code()` retains the string-based compatibility accessor.
 - Monthly price ZIPs are processed in memory without filesystem extraction.
 - Cadastral-map, collection-document, and geometric-plan helpers require the `%PDF-` signature and return untouched bytes and metadata.
 - Free accounts require their file/purpose fields. Verifying accounts require their verification fields and are restricted to eligible PDF outputs.
@@ -183,7 +184,7 @@ Normal tests and CI are entirely offline and credential-free.
 
 Production verification is a separate maintainer operation requiring distinct opt-in, environment-only production credentials, explicit parcel/building selectors, and charge caps. The included smoke test checks all service statuses and runs parcel-information and building-by-ID XML lifecycles. It never retries a dispatched operation and does not print credentials, report IDs, or report content.
 
-The configured total authorization cannot exceed **300 CZK**, and each report download is further hard-capped at **50 CZK**. If either exact server price exceeds 50 CZK or its remaining total budget, that download request is not dispatched. A separate generation-only parcel PDF+XML check confirms the same service **527** rejection as trial; it never downloads an output or authorizes a report-download charge.
+The configured total authorization cannot exceed **300 CZK**, and each report download is further hard-capped at **50 CZK**. If either exact server price exceeds 50 CZK or its remaining total budget, that download request is not dispatched. Parcel PDF+XML is unsupported with service **527**, so production verification does not probe it.
 
 ```sh
 set -a; . ./.env; set +a

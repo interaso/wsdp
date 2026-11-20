@@ -657,10 +657,12 @@ Use validated newtypes and exact values:
 - `ReportVersion` is a validated lexical `MAJOR.MINOR` value, not `f64`, with
   named constants for supported versions, checked string parsing for dynamic
   values, and defaults defined per report family rather than globally.
-- Use `jiff::civil::Date` for `xs:date`. Introduce `XmlDateTime` to preserve a
-  civil date-time, optional offset, and fractional seconds for `xs:dateTime`.
-  Generate WS-Security `Created` as UTC. Do not force naive server timestamps
-  into UTC or assume an undocumented timezone.
+- Use `XmlDate` for report/search `xs:date` values so optional offsets and the
+  original lexical form are retained; code-list civil-date projections first
+  undergo strict XML-date validation. Introduce `XmlDateTime` to preserve a civil
+  date-time, optional offset, and arbitrary fractional-second precision for
+  `xs:dateTime`. Generate WS-Security `Created` as UTC. Do not force naive server
+  timestamps into UTC or assume an undocumented timezone.
 - Map `a`/`n` to `bool` only at the public-model boundary and preserve unknown
   values in open-ended protocol enums where the XSD is not closed.
 
@@ -1648,34 +1650,34 @@ Also:
 
 The release is functionally complete only when:
 
-- [ ] `Environment::Trial` and `Environment::Production` use official WSDP 3.1
+- [x] `Environment::Trial` and `Environment::Production` use official WSDP 3.1
       endpoints, with production never the default.
-- [ ] All five core services and all documented code-list/search operations are
+- [x] All five core services and all documented code-list/search operations are
       implemented. An explicit WSDL-derived operation inventory in tests covers
       33 code-list operations, eight lookup operations, and each service's
       `stavWS`, so coverage does not depend on informal counts.
-- [ ] MBR, eligible unit/LV information views, account status, report versions,
+- [x] MBR, eligible unit/LV information views, account status, report versions,
       and password change are covered.
-- [ ] Every report-generation operation has a typed request and safe raw output
+- [x] Every report-generation operation has a typed request and safe raw output
       path.
-- [ ] Every listed XML report family has a complete public model and fixture
+- [x] Every listed XML report family has a complete public model and fixture
       tests, including legacy and NTR LV and monthly price data.
-- [ ] PDF/ZIP outputs are returned without data loss and with bounded decoding.
-- [ ] Report generation, waiting, charging download, and deletion are separate;
+- [x] PDF/ZIP outputs are returned without data loss and with bounded decoding.
+- [x] Report generation, waiting, charging download, and deletion are separate;
       every potentially charging helper requires `ChargeApproval`.
-- [ ] No status poll calls `vratSestavu`; no rejected approval calls it either.
-- [ ] No automatic generation/download/authentication retries exist, and
+- [x] No status poll calls `vratSestavu`; no rejected approval calls it either.
+- [x] No automatic generation/download/authentication retries exist, and
       generation calls are paced across client clones.
-- [ ] Errors preserve report IDs and charging/submission uncertainty where
+- [x] Errors preserve report IDs and charging/submission uncertainty where
       applicable, without exposing sensitive payloads.
-- [ ] Unknown codes and future values do not cause unnecessary decoding failure;
+- [x] Unknown codes and future values do not cause unnecessary decoding failure;
       raw XML remains available.
-- [ ] Generated legal-relation/proceeding-subject mappings cover every `KOD` in
+- [x] Generated legal-relation/proceeding-subject mappings cover every `KOD` in
       their pinned official CSVs, retain historical metadata, and provide tri-state
       ownership classification without name matching.
-- [ ] Offline checks, docs, examples, package checks, and manual trial lifecycle
+- [x] Offline checks, docs, examples, package checks, and manual trial lifecycle
       pass with no credentials committed.
-- [ ] Any production verification is separately opted in, charge-capped, and
+- [x] Any production verification is separately opted in, charge-capped, and
       leaves no secrets or personal report content in artifacts.
 
 ## 16. Verification questions for implementation spikes

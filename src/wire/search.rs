@@ -3,7 +3,8 @@ use quick_xml::events::{BytesEnd, BytesStart, Event};
 use roxmltree::Node;
 
 use super::soap::{
-    COMMON_NS, XmlResult, child, children, is_nil, require_tag, simple_content, text_element,
+    COMMON_NS, XmlResult, child as soap_child, children, is_nil, require_tag, simple_content,
+    text_element,
 };
 use crate::client::Operation;
 use crate::error::{Error, Result};
@@ -14,7 +15,8 @@ use crate::model::search::{
     GeometricPlan, MunicipalityPartReference, Ownership, OwnershipTarget, Parcel, ParcelIdentity,
     ParcelKind, ParcelNumberingKind, ParcelSearchSelector, Proceeding, ProceedingSearchSelector,
     SearchRequest as Request, SearchResponse as Response, SearchResult, SubjectBase, SubjectKind,
-    SubjectSearchSelector, Unit, UnitSearchSelector, XmlDate, YesNo,
+    SubjectSearchSelector, Unit, UnitSearchSelector, XmlDate, YesNo, trim_xml_whitespace,
+    unsigned_integer_digits,
 };
 use crate::model::search::{FractionComponent, ShortPersonalIdentifier};
 use crate::model::{ServiceKind, XmlDateTime};
@@ -60,6 +62,9 @@ pub(crate) fn operation(request: &Request) -> Operation {
 
 /// Writes the operation-specific children of the SOAP request element.
 pub(crate) fn write_request(writer: &mut Writer<Vec<u8>>, request: &Request) -> XmlResult {
+    request
+        .validate()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
     match request {
         Request::Parcel(request) => {
             write_parcel_selector(writer, &request.selector)?;
@@ -316,6 +321,20 @@ fn required_results<T>(
     Ok(SearchResult::from_items(items))
 }
 
+fn child<'a, 'input>(
+    node: Node<'a, 'input>,
+    namespace: &str,
+    name: &str,
+) -> Result<Option<Node<'a, 'input>>> {
+    let element = soap_child(node, namespace, name)?;
+    if element.is_some_and(is_nil) {
+        return Err(Error::invalid_response(format!(
+            "XML element {name} is nil but is not nillable"
+        )));
+    }
+    Ok(element)
+}
+
 fn required_child<'a, 'input>(
     node: Node<'a, 'input>,
     namespace: &str,
@@ -339,9 +358,6 @@ fn optional_text(node: Node<'_, '_>, namespace: &str, name: &str) -> Result<Opti
     let Some(element) = child(node, namespace, name)? else {
         return Ok(None);
     };
-    if is_nil(element) {
-        return Ok(None);
-    }
     simple_content(element, name).map(Some)
 }
 
@@ -378,7 +394,76 @@ fn parse_node<T: std::str::FromStr>(node: Node<'_, '_>, name: &str) -> Result<T>
     parse_text(simple_content(node, name)?, name)
 }
 
+fn parse_unsigned_number<T>(value: &str, name: &str, minimum: T, maximum: T) -> Result<T>
+where
+    T: std::str::FromStr + PartialOrd,
+{
+    let invalid =
+        || Error::invalid_response(format!("XML element {name} is outside its XSD range"));
+    let digits = unsigned_integer_digits(value).ok_or_else(invalid)?;
+    let number = digits.parse::<T>().map_err(|_| invalid())?;
+    if number < minimum || number > maximum {
+        return Err(invalid());
+    }
+    Ok(number)
+}
+
+fn required_unsigned_number<T>(
+    node: Node<'_, '_>,
+    namespace: &str,
+    name: &str,
+    minimum: T,
+    maximum: T,
+) -> Result<T>
+where
+    T: std::str::FromStr + PartialOrd,
+{
+    parse_unsigned_number(
+        &required_text(node, namespace, name)?,
+        name,
+        minimum,
+        maximum,
+    )
+}
+
+fn optional_unsigned_number<T>(
+    node: Node<'_, '_>,
+    namespace: &str,
+    name: &str,
+    minimum: T,
+    maximum: T,
+) -> Result<Option<T>>
+where
+    T: std::str::FromStr + PartialOrd,
+{
+    optional_text(node, namespace, name)?
+        .map(|value| parse_unsigned_number(&value, name, minimum, maximum))
+        .transpose()
+}
+
+fn parse_survey_result(value: &str) -> Result<i32> {
+    let invalid =
+        || Error::invalid_response("XML element cisloVysledkuZemCinnosti is outside its XSD range");
+    let number = trim_xml_whitespace(value)
+        .parse::<i32>()
+        .map_err(|_| invalid())?;
+    if !(-99_999..=99_999).contains(&number) {
+        return Err(invalid());
+    }
+    Ok(number)
+}
+
+fn reject_nil(node: Node<'_, '_>, name: &str) -> Result<()> {
+    if is_nil(node) {
+        return Err(Error::invalid_response(format!(
+            "XML element {name} is nil but is not nillable"
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn decode_cadastral_area(node: Node<'_, '_>) -> Result<CadastralAreaReference> {
+    reject_nil(node, "katastralniUzemi")?;
     Ok(CadastralAreaReference {
         code: optional_parse(node, COMMON_NS, "kod")?,
         name: optional_text(node, COMMON_NS, "nazev")?,
@@ -387,6 +472,7 @@ pub(crate) fn decode_cadastral_area(node: Node<'_, '_>) -> Result<CadastralAreaR
 
 fn decode_municipality_part(node: Node<'_, '_>) -> Result<MunicipalityPartReference> {
     require_tag(node, COMMON_NS, "castObce")?;
+    reject_nil(node, "castObce")?;
     Ok(MunicipalityPartReference {
         code: required_parse(node, COMMON_NS, "kod")?,
         name: required_text(node, COMMON_NS, "nazev")?,
@@ -394,25 +480,27 @@ fn decode_municipality_part(node: Node<'_, '_>) -> Result<MunicipalityPartRefere
 }
 
 pub(crate) fn decode_parcel_identity(node: Node<'_, '_>) -> Result<ParcelIdentity> {
+    reject_nil(node, "parcela")?;
     Ok(ParcelIdentity {
         id: required_parse(node, COMMON_NS, "idParcely")?,
         ownership_sheet_id: optional_parse(node, COMMON_NS, "lvId")?,
         cadastral_area: required_parse(node, COMMON_NS, "katuzeKod")?,
-        root_number: required_parse(node, COMMON_NS, "kmenoveCislo")?,
+        root_number: required_unsigned_number(node, COMMON_NS, "kmenoveCislo", 0_u32, 99_999)?,
         kind: ParcelKind::from_raw(required_text(node, COMMON_NS, "parcelaType")?),
         numbering_kind: ParcelNumberingKind::from_raw(required_text(
             node,
             COMMON_NS,
             "druhCislovaniPar",
         )?),
-        subdivision: optional_parse(node, COMMON_NS, "poddeleniCisla")?,
+        subdivision: optional_unsigned_number(node, COMMON_NS, "poddeleniCisla", 1_u16, 999)?,
         original_cadastral_area: optional_parse(node, COMMON_NS, "katuzePuv")?,
         simplified_registration_kind: optional_text(node, COMMON_NS, "typZE")?,
-        part: optional_parse(node, COMMON_NS, "dil")?,
+        part: optional_unsigned_number(node, COMMON_NS, "dil", 1_u16, 999)?,
     })
 }
 
 pub(crate) fn decode_building_identity(node: Node<'_, '_>) -> Result<BuildingIdentity> {
+    reject_nil(node, "stavba")?;
     let municipality_part = optional_parse(node, COMMON_NS, "castObceKod")?;
     let parcel = child(node, COMMON_NS, "parcelaIdentifikacni")?;
     let location = match (municipality_part, parcel) {
@@ -436,6 +524,7 @@ pub(crate) fn decode_building_identity(node: Node<'_, '_>) -> Result<BuildingIde
 }
 
 fn decode_building_right_identity(node: Node<'_, '_>) -> Result<BuildingRightIdentity> {
+    reject_nil(node, "pravoStavby")?;
     Ok(BuildingRightIdentity {
         id: required_parse(node, COMMON_NS, "idPravoStavby")?,
         ownership_sheet_id: optional_parse(node, COMMON_NS, "lvId")?,
@@ -448,20 +537,21 @@ fn decode_building_right_identity(node: Node<'_, '_>) -> Result<BuildingRightIde
 }
 
 pub(crate) fn decode_parcel(node: Node<'_, '_>) -> Result<Parcel> {
+    reject_nil(node, "Parcela")?;
     Ok(Parcel {
         id: required_parse(node, COMMON_NS, "idParcely")?,
         kind: ParcelKind::from_raw(required_text(node, COMMON_NS, "parcelaType")?),
         cadastral_area: required_parse(node, COMMON_NS, "katuzeKod")?,
         original_cadastral_area: optional_parse(node, COMMON_NS, "katuzePuv")?,
-        root_number: required_parse(node, COMMON_NS, "kmenoveCislo")?,
-        subdivision: optional_parse(node, COMMON_NS, "poddeleniCisla")?,
-        part: optional_parse(node, COMMON_NS, "dil")?,
+        root_number: required_unsigned_number(node, COMMON_NS, "kmenoveCislo", 0_u32, 99_999)?,
+        subdivision: optional_unsigned_number(node, COMMON_NS, "poddeleniCisla", 1_u16, 999)?,
+        part: optional_unsigned_number(node, COMMON_NS, "dil", 1_u16, 999)?,
         area_determination_code: optional_text(node, COMMON_NS, "zpUrVyKod")?,
         simplified_registration_kind: optional_text(node, COMMON_NS, "typZE")?,
         land_type_code: optional_text(node, COMMON_NS, "drupozKod")?,
         land_use_code: optional_text(node, COMMON_NS, "zpuvypaKod")?,
         parcel_type_code: optional_text(node, COMMON_NS, "typ")?,
-        area: required_parse(node, COMMON_NS, "vymera")?,
+        area: required_unsigned_number(node, COMMON_NS, "vymera", 0_u32, 999_999_999)?,
         ownership_sheet_id: optional_parse(node, COMMON_NS, "lvId")?,
         numbering_kind: ParcelNumberingKind::from_raw(required_text(
             node,
@@ -479,6 +569,7 @@ pub(crate) fn decode_parcel(node: Node<'_, '_>) -> Result<Parcel> {
 }
 
 pub(crate) fn decode_building(node: Node<'_, '_>) -> Result<Building> {
+    reject_nil(node, "Stavba")?;
     Ok(Building {
         id: required_parse(node, COMMON_NS, "idStavby")?,
         building_type: required_parse(node, COMMON_NS, "stavbaTypKod")?,
@@ -501,20 +592,23 @@ pub(crate) fn decode_building(node: Node<'_, '_>) -> Result<Building> {
 }
 
 pub(crate) fn decode_unit(node: Node<'_, '_>) -> Result<Unit> {
+    reject_nil(node, "Jednotka")?;
     Ok(Unit {
         id: required_parse(node, COMMON_NS, "idJednotky")?,
         building: decode_building_identity(required_child(node, COMMON_NS, "stavba")?)?,
         unit_type_code: required_text(node, COMMON_NS, "typJedKod")?,
-        number: required_parse(node, COMMON_NS, "cislo")?,
+        number: required_unsigned_number(node, COMMON_NS, "cislo", 0_u64, 9_999_999_999)?,
         use_code: optional_text(node, COMMON_NS, "zpuVyKod")?,
         ownership_sheet_id: optional_parse(node, COMMON_NS, "lvId")?,
     })
 }
 
 pub(crate) fn decode_building_right(node: Node<'_, '_>) -> Result<BuildingRight> {
+    reject_nil(node, "pravoStavby")?;
     let purposes_node = required_child(node, COMMON_NS, "ucelyPravaStavby")?;
     let purposes = children(purposes_node, COMMON_NS, "ucelPravaStavby")
         .map(|purpose| {
+            reject_nil(purpose, "ucelPravaStavby")?;
             Ok(BuildingRightPurpose {
                 code: required_text(purpose, COMMON_NS, "kod")?,
                 name: required_text(purpose, COMMON_NS, "nazev")?,
@@ -550,6 +644,7 @@ pub(crate) fn decode_building_right(node: Node<'_, '_>) -> Result<BuildingRight>
 }
 
 pub(crate) fn decode_subject(node: Node<'_, '_>) -> Result<AuthorizedSubject> {
+    reject_nil(node, "OS")?;
     let partner1 = child(node, COMMON_NS, "partner1")?
         .map(|partner| decode_subject_base(required_child(partner, COMMON_NS, "OS")?))
         .transpose()?;
@@ -564,6 +659,7 @@ pub(crate) fn decode_subject(node: Node<'_, '_>) -> Result<AuthorizedSubject> {
 }
 
 fn decode_subject_base(node: Node<'_, '_>) -> Result<SubjectBase> {
+    reject_nil(node, "OS")?;
     Ok(SubjectBase {
         id: required_parse(node, COMMON_NS, "idOS")?,
         name: optional_text(node, COMMON_NS, "nazev")?,
@@ -597,18 +693,26 @@ fn decode_subject_base(node: Node<'_, '_>) -> Result<SubjectBase> {
 }
 
 pub(crate) fn decode_proceeding(node: Node<'_, '_>) -> Result<Proceeding> {
+    reject_nil(node, "rizeni")?;
     Ok(Proceeding {
         id: required_parse(node, COMMON_NS, "idRizeni")?,
         workplace: required_parse(node, COMMON_NS, "praresKod")?,
         proceeding_type: required_text(node, COMMON_NS, "rizeniTyp")?,
-        serial_number: required_parse(node, COMMON_NS, "poradoveCislo")?,
-        year: required_parse(node, COMMON_NS, "rok")?,
+        serial_number: required_unsigned_number(
+            node,
+            COMMON_NS,
+            "poradoveCislo",
+            1_u32,
+            99_999_999,
+        )?,
+        year: required_unsigned_number(node, COMMON_NS, "rok", 1_u16, 9999)?,
         external_id: optional_text(node, COMMON_NS, "extIdentifikace")?,
         created_at: required_parse::<XmlDateTime>(node, COMMON_NS, "createDate")?,
     })
 }
 
 fn decode_document(node: Node<'_, '_>) -> Result<CollectionDocument> {
+    reject_nil(node, "listina")?;
     Ok(CollectionDocument {
         id: required_parse(node, COMMON_NS, "listinaId")?,
         designation: required_text(node, COMMON_NS, "oznaceniListiny")?,
@@ -617,9 +721,14 @@ fn decode_document(node: Node<'_, '_>) -> Result<CollectionDocument> {
 }
 
 fn decode_geometric_plan(node: Node<'_, '_>) -> Result<GeometricPlan> {
+    reject_nil(node, "geometrickyPlan")?;
     Ok(GeometricPlan {
         cadastral_area: required_parse(node, COMMON_NS, "katuzeKod")?,
-        survey_result_number: required_parse(node, COMMON_NS, "cisloVysledkuZemCinnosti")?,
+        survey_result_number: parse_survey_result(&required_text(
+            node,
+            COMMON_NS,
+            "cisloVysledkuZemCinnosti",
+        )?)?,
         document_id: required_parse(node, COMMON_NS, "dokumentId")?,
         file_name: required_text(node, COMMON_NS, "nazevSouboru")?,
         proceeding: decode_proceeding(required_child(node, COMMON_NS, "rizeniPGP")?)?,
@@ -629,6 +738,7 @@ fn decode_geometric_plan(node: Node<'_, '_>) -> Result<GeometricPlan> {
 }
 
 pub(crate) fn decode_ownership(node: Node<'_, '_>) -> Result<Ownership> {
+    reject_nil(node, "vlastnictvi")?;
     let subject = child(node, COMMON_NS, "osId")?;
     let parcel = child(node, COMMON_NS, "parcelaId")?;
     let building = child(node, COMMON_NS, "budovaId")?;
@@ -663,7 +773,9 @@ pub(crate) fn decode_ownership(node: Node<'_, '_>) -> Result<Ownership> {
         share_denominator: required_parse::<FractionComponent>(node, COMMON_NS, "podilJmenovatel")?,
         legal_relation_code: required_text(node, COMMON_NS, "typPravnihoVztahuKod")?,
         cadastral_area: required_parse(node, COMMON_NS, "katuzeKod")?,
-        ownership_sheet_number: required_parse(node, COMMON_NS, "lvCislo")?,
+        ownership_sheet_number: required_unsigned_number(
+            node, COMMON_NS, "lvCislo", 1_u32, 999_999,
+        )?,
         target,
     })
 }
@@ -712,7 +824,7 @@ mod tests {
 
     fn decoded(request: &Request, response_name: &str, contents: &str) -> Result<Response> {
         let xml = format!(
-            r#"<{response_name} xmlns="{SEARCH_NS}" xmlns:c="{COMMON_NS}">{contents}</{response_name}>"#
+            r#"<{response_name} xmlns="{SEARCH_NS}" xmlns:c="{COMMON_NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{contents}</{response_name}>"#
         );
         let document = Document::parse(&xml).unwrap();
         decode_response(request, document.root_element())
@@ -808,6 +920,69 @@ mod tests {
             assert_eq!(operation.request, request_name);
             assert_eq!(operation.response, response_name);
             assert_eq!(encoded(request), body);
+        }
+    }
+
+    #[test]
+    fn serialization_rejects_invalid_directly_constructed_requests_before_writing() {
+        let mut parcel = parcel_key();
+        parcel.number.root = 100_000;
+        let mut right_parcel = parcel_key();
+        right_parcel.number.subdivision = Some(0);
+        let invalid_building = BuildingSearchKey {
+            municipality_part: MunicipalityPartCode::new("123").unwrap(),
+            building_type: BuildingTypeCode::new("1").unwrap(),
+            house_number: 0,
+        };
+        let requests = vec![
+            parcel_request(ParcelSearchSelector::Number(parcel)),
+            Request::Unit(UnitSearch {
+                selector: UnitSearchSelector::Number(UnitSearchKey {
+                    building: BuildingSearchSelector::Id(BuildingId::new("1").unwrap()),
+                    number: Some(10_000_000_000),
+                }),
+                valid_at: None,
+            }),
+            Request::Building(BuildingSearch {
+                selector: BuildingSearchSelector::Number(invalid_building),
+                valid_at: None,
+            }),
+            Request::Subject(SubjectSearch {
+                selector: SubjectSearchSelector::LegalPerson(LegalPersonSearch {
+                    company_id: None,
+                    name: None,
+                }),
+                valid_at: None,
+            }),
+            Request::BuildingRight(BuildingRightSearch {
+                selector: BuildingRightSelector::Parcel(ParcelSearchSelector::Number(right_parcel)),
+                valid_at: None,
+            }),
+            Request::Proceeding(ProceedingSearch {
+                selector: ProceedingSearchSelector::Number(ProceedingSearchKey {
+                    proceeding_type: "V".to_owned(),
+                    serial_number: 0,
+                    year: 2026,
+                    workplace: WorkplaceCode::new("1").unwrap(),
+                }),
+            }),
+            Request::CollectionDocument(CollectionDocumentSearch {
+                proceeding: ProceedingSearchSelector::Number(ProceedingSearchKey {
+                    proceeding_type: "V".to_owned(),
+                    serial_number: 1,
+                    year: 0,
+                    workplace: WorkplaceCode::new("1").unwrap(),
+                }),
+            }),
+            Request::GeometricPlan(GeometricPlanSearch {
+                cadastral_area: CadastralAreaCode::new("693936").unwrap(),
+                survey_result_number: 100_000,
+            }),
+        ];
+        for request in requests {
+            let mut writer = Writer::new(Vec::new());
+            assert!(write_request(&mut writer, &request).is_err());
+            assert!(writer.into_inner().is_empty());
         }
     }
 
@@ -916,6 +1091,142 @@ mod tests {
             unreachable!()
         };
         assert_eq!(result.completion, SearchCompletion::LimitExceeded);
+    }
+
+    #[test]
+    fn response_numbers_use_xsd_lexical_rules_and_actual_ranges() {
+        let parcel = parcel_request(ParcelSearchSelector::Id(ParcelId::new("1").unwrap()));
+        let valid_xml = parcel_xml(" \t+0001\r\n", "PKN")
+            .replace(
+                "<c:katuzeKod>693936</c:katuzeKod>",
+                "<c:katuzeKod> +693936 </c:katuzeKod>",
+            )
+            .replace(
+                "<c:kmenoveCislo>77</c:kmenoveCislo>",
+                "<c:kmenoveCislo> +00077 </c:kmenoveCislo><c:poddeleniCisla> +999 </c:poddeleniCisla><c:dil>1</c:dil>",
+            )
+            .replace(
+                "<c:vymera>100</c:vymera>",
+                "<c:vymera> +999999999 </c:vymera>",
+            );
+        let Response::Parcels(result) = decoded(
+            &parcel,
+            "NajdiParceluResponse",
+            &format!("<ParcelaList>{valid_xml}</ParcelaList>"),
+        )
+        .unwrap() else {
+            panic!("wrong response variant");
+        };
+        let item = &result.items[0];
+        // XML parsers normalize literal carriage returns in parsed character data.
+        assert_eq!(item.id.as_str(), " \t+0001\n");
+        assert_eq!(item.cadastral_area.as_str(), " +693936 ");
+        assert_eq!(item.root_number, 77);
+        assert_eq!(item.subdivision, Some(999));
+        assert_eq!(item.part, Some(1));
+        assert_eq!(item.area, 999_999_999);
+
+        for invalid in [
+            parcel_xml("1", "PKN").replace(">77</c:kmenoveCislo>", ">100000</c:kmenoveCislo>"),
+            parcel_xml("1", "PKN").replace(
+                "<c:vymera>",
+                "<c:poddeleniCisla>0</c:poddeleniCisla><c:vymera>",
+            ),
+            parcel_xml("1", "PKN").replace(
+                "<c:vymera>",
+                "<c:poddeleniCisla>1000</c:poddeleniCisla><c:vymera>",
+            ),
+            parcel_xml("1", "PKN").replace("<c:vymera>", "<c:dil>1000</c:dil><c:vymera>"),
+            parcel_xml("1", "PKN").replace(">100</c:vymera>", ">1000000000</c:vymera>"),
+        ] {
+            assert!(
+                decoded(
+                    &parcel,
+                    "NajdiParceluResponse",
+                    &format!("<ParcelaList>{invalid}</ParcelaList>"),
+                )
+                .is_err()
+            );
+        }
+
+        let unit = Request::Unit(UnitSearch {
+            selector: UnitSearchSelector::Id(UnitId::new("10").unwrap()),
+            valid_at: None,
+        });
+        let unit_xml = |number: &str| {
+            format!(
+                "<Jednotka><c:idJednotky>10</c:idJednotky><c:stavba><c:idStavby>20</c:idStavby><c:typStavbyKod>3</c:typStavbyKod><c:parcelaIdentifikacni>{}</c:parcelaIdentifikacni></c:stavba><c:typJedKod>01</c:typJedKod><c:cislo>{number}</c:cislo></Jednotka>",
+                parcel_identity_fields("1")
+            )
+        };
+        assert!(
+            decoded(
+                &unit,
+                "NajdiJednotkuResponse",
+                &format!("<JednotkaList>{}</JednotkaList>", unit_xml(" +9999999999 ")),
+            )
+            .is_ok()
+        );
+        assert!(
+            decoded(
+                &unit,
+                "NajdiJednotkuResponse",
+                &format!("<JednotkaList>{}</JednotkaList>", unit_xml("10000000000")),
+            )
+            .is_err()
+        );
+
+        let proceeding = Request::Proceeding(ProceedingSearch {
+            selector: ProceedingSearchSelector::Id(ProceedingId::new("50").unwrap()),
+        });
+        for invalid in [
+            proceeding_fields("50").replace(">123</c:poradoveCislo>", ">0</c:poradoveCislo>"),
+            proceeding_fields("50")
+                .replace(">123</c:poradoveCislo>", ">100000000</c:poradoveCislo>"),
+            proceeding_fields("50").replace(">2026</c:rok>", ">0</c:rok>"),
+            proceeding_fields("50").replace(">2026</c:rok>", ">10000</c:rok>"),
+        ] {
+            assert!(
+                decoded(
+                    &proceeding,
+                    "NajdiRizeniResponse",
+                    &format!("<RizeniList><rizeni>{invalid}</rizeni></RizeniList>"),
+                )
+                .is_err()
+            );
+        }
+        assert!(parse_survey_result(" +99999 ").unwrap() == 99_999);
+        assert!(parse_survey_result("-99999").unwrap() == -99_999);
+        for invalid in ["100000", "-100000", "1.0", " 1 0 "] {
+            assert!(parse_survey_result(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn nonnillable_optional_scalars_and_complex_values_reject_nil() {
+        let parcel = parcel_request(ParcelSearchSelector::Id(ParcelId::new("1").unwrap()));
+        let nil_scalar = parcel_xml("1", "PKN")
+            .replace("<c:vymera>", "<c:katuzePuv xsi:nil=\"true\"/><c:vymera>");
+        assert!(
+            decoded(
+                &parcel,
+                "NajdiParceluResponse",
+                &format!("<ParcelaList>{nil_scalar}</ParcelaList>"),
+            )
+            .is_err()
+        );
+        let nil_complex = parcel_xml("1", "PKN").replace(
+            "<c:vymera>",
+            "<c:stavba xsi:nil=\"true\"><c:idStavby>20</c:idStavby><c:typStavbyKod>1</c:typStavbyKod><c:castObceKod>123</c:castObceKod><c:cisloDomovni>1</c:cisloDomovni></c:stavba><c:vymera>",
+        );
+        assert!(
+            decoded(
+                &parcel,
+                "NajdiParceluResponse",
+                &format!("<ParcelaList>{nil_complex}</ParcelaList>"),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1123,7 +1434,7 @@ mod tests {
         let Response::Subjects(result) = decoded(
             &request,
             "NajdiOSResponse",
-            "<OSList><OS><c:idOS>1</c:idOS><c:rcZkracene>123456</c:rcZkracene><c:cisloDomovni>0007</c:cisloDomovni><c:psc>01000</c:psc><c:vlastnikTyp>NOVA</c:vlastnikTyp><c:typCpCe>3</c:typCpCe><c:partner1><c:OS><c:idOS>2</c:idOS><c:vlastnikTyp>OFO</c:vlastnikTyp></c:OS></c:partner1><c:partner2><c:OS><c:idOS>3</c:idOS><c:vlastnikTyp>OFO</c:vlastnikTyp></c:OS></c:partner2></OS></OSList>",
+            "<OSList><OS><c:idOS>1</c:idOS><c:nazev>response-name-secret</c:nazev><c:prijmeni>response-surname-secret</c:prijmeni><c:jmeno>response-given-secret</c:jmeno><c:rcZkracene>123456</c:rcZkracene><c:ulice>response-street-secret</c:ulice><c:cisloDomovni>0007</c:cisloDomovni><c:obecNazev>response-municipality-secret</c:obecNazev><c:psc>01000</c:psc><c:vlastnikTyp>NOVA</c:vlastnikTyp><c:typCpCe>3</c:typCpCe><c:partner1><c:OS><c:idOS>2</c:idOS><c:vlastnikTyp>OFO</c:vlastnikTyp></c:OS></c:partner1><c:partner2><c:OS><c:idOS>3</c:idOS><c:vlastnikTyp>OFO</c:vlastnikTyp></c:OS></c:partner2></OS></OSList>",
         ).unwrap() else {
             panic!("wrong response variant");
         };
@@ -1137,6 +1448,19 @@ mod tests {
         assert_eq!(subject.base.postal_code.as_deref(), Some("01000"));
         assert_eq!(subject.partner1.as_ref().unwrap().id.as_str(), "2");
         assert_eq!(subject.partner2.as_ref().unwrap().id.as_str(), "3");
-        assert!(!format!("{subject:?}").contains("123456"));
+        assert_eq!(subject.base.name.as_deref(), Some("response-name-secret"));
+        let debug = format!("{subject:?} {:?}", subject.base);
+        for sentinel in [
+            "123456",
+            "response-name-secret",
+            "response-surname-secret",
+            "response-given-secret",
+            "response-street-secret",
+            "response-municipality-secret",
+            "0007",
+            "01000",
+        ] {
+            assert!(!debug.contains(sentinel), "{debug}");
+        }
     }
 }

@@ -518,7 +518,14 @@ fn decode_list<T>(
     mut decode_item: impl FnMut(Node<'_, '_>) -> Result<T>,
 ) -> Result<CodeList<T>> {
     let items = soap::children(response, NS, item_name)
-        .map(&mut decode_item)
+        .map(|node| {
+            if soap::is_nil(node) {
+                return Err(Error::invalid_response(format!(
+                    "code-list element {item_name} is nil but is not nillable"
+                )));
+            }
+            decode_item(node)
+        })
         .collect::<Result<Vec<_>>>()?;
     let last_updated = response
         .attribute("posledniAktualizaceCiselniku")
@@ -551,7 +558,9 @@ fn optional_text(node: Node<'_, '_>, name: &str) -> Result<Option<String>> {
         return Ok(None);
     };
     if soap::is_nil(element) {
-        return Ok(None);
+        return Err(Error::invalid_response(format!(
+            "code-list element {name} is nil but is not nillable"
+        )));
     }
     soap::simple_content(element, name).map(Some)
 }
@@ -809,8 +818,9 @@ mod tests {
         contents: &str,
     ) -> Result<CodeListResult> {
         let response = operation(request).response;
-        let xml =
-            format!(r#"<{response} xmlns="{NS}"{attributes}><vysledek/>{contents}</{response}>"#);
+        let xml = format!(
+            r#"<{response} xmlns="{NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"{attributes}><vysledek/>{contents}</{response}>"#
+        );
         let document = Document::parse(&xml).unwrap();
         decode_response(document.root_element(), request)
     }
@@ -1326,6 +1336,44 @@ mod tests {
     }
 
     #[test]
+    fn nonnillable_optional_code_list_values_reject_nil() {
+        let request = CodeListRequest::CadastralAreaHistory {
+            changed_since: None,
+            filter: None,
+        };
+        assert!(
+            decode_xml(
+                &request,
+                "",
+                r#"<katastralniUzemi><kod>123</kod><nazev>old</nazev><platnostOd>2020-01-02</platnostOd><platnostDo xsi:nil="true"/></katastralniUzemi>"#,
+            )
+            .is_err()
+        );
+        assert!(
+            decode_xml(
+                &CodeListRequest::Regions,
+                "",
+                r#"<kraj xsi:nil="true"><kod>1</kod><nazev>region</nazev></kraj>"#,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn code_list_numeric_codes_accept_collapsed_xsd_lexical_forms() {
+        let result = decode_xml(
+            &CodeListRequest::Regions,
+            "",
+            r#"<kraj><kod> +000001 </kod><nazev>region</nazev></kraj>"#,
+        )
+        .unwrap();
+        let CodeListResult::Regions(list) = result else {
+            panic!("wrong result variant");
+        };
+        assert_eq!(list.items[0].code.as_str(), " +000001 ");
+    }
+
+    #[test]
     fn inventory_and_history_validate_all_dates() {
         let result = decode_xml(
             &CodeListRequest::CodeListInventory {
@@ -1533,7 +1581,7 @@ mod tests {
         let result = decode_xml(
             &CodeListRequest::ServiceMessages,
             "",
-            r#"<zprava><kod>998</kod><typ>X</typ><nazev>Future message</nazev></zprava>"#,
+            r#"<zprava><kod>998</kod><typ>X</typ><nazev>Future message</nazev></zprava><zprava><kod> +000310 </kod><typ>W</typ><nazev>Known message</nazev></zprava>"#,
         )
         .unwrap();
         let CodeListResult::ServiceMessages(list) = result else {
@@ -1542,6 +1590,7 @@ mod tests {
         assert_eq!(list.items[0].code, MessageCode::Other("998".to_owned()));
         assert_eq!(list.items[0].kind, "X");
         assert_eq!(list.items[0].name, "Future message");
+        assert_eq!(list.items[1].code, MessageCode::ResultLimitExceeded);
     }
 
     #[test]

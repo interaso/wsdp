@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use rust_decimal::Decimal;
 
+use super::common::positive_integer_digits;
 use super::id::{CadastralAreaCode, MunicipalityPartCode, OwnershipSheetId, ParcelId, UnitId};
 use super::search::{
     AuthorizedSubject, Building, BuildingRight, BuildingTypeCode, CadastralAreaReference,
@@ -14,17 +15,21 @@ use crate::{Error, Result};
 ///
 /// This is not an internal `BuildingId`; the XSD independently permits 30 digits.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct UnitBuildingNumber(String);
 
 impl UnitBuildingNumber {
     /// Validates a positive decimal integer of at most 30 digits.
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
-        if value.is_empty()
-            || value.len() > 30
-            || !value.bytes().all(|byte| byte.is_ascii_digit())
-            || value.bytes().all(|byte| byte == b'0')
-        {
+        let Some(digits) = positive_integer_digits(&value) else {
+            return Err(Error::invalid_input(
+                "building_number",
+                "expected a positive decimal integer with at most 30 digits",
+            ));
+        };
+        if digits.len() > 30 {
             return Err(Error::invalid_input(
                 "building_number",
                 "expected a positive decimal integer with at most 30 digits",
@@ -53,6 +58,17 @@ impl FromStr for UnitBuildingNumber {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for UnitBuildingNumber {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// `dejMBRParcel` request. At least one parcel ID is required.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParcelBoundingBoxRequest {
@@ -63,13 +79,19 @@ pub struct ParcelBoundingBoxRequest {
 impl ParcelBoundingBoxRequest {
     /// Validates the XSD's non-empty ID list.
     pub fn new(parcel_ids: Vec<ParcelId>) -> Result<Self> {
-        if parcel_ids.is_empty() {
+        let value = Self { parcel_ids };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.parcel_ids.is_empty() {
             return Err(Error::invalid_input(
                 "parcel_ids",
                 "at least one parcel ID is required",
             ));
         }
-        Ok(Self { parcel_ids })
+        Ok(())
     }
 }
 
@@ -103,18 +125,24 @@ impl UnitOverviewNaturalKey {
         building_number: UnitBuildingNumber,
         unit_number: u64,
     ) -> Result<Self> {
-        if unit_number > 9_999_999_999 {
+        let value = Self {
+            municipality_part,
+            building_type,
+            building_number,
+            unit_number,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.unit_number > 9_999_999_999 {
             return Err(Error::invalid_input(
                 "unit_number",
                 "unit number must be at most 9999999999",
             ));
         }
-        Ok(Self {
-            municipality_part,
-            building_type,
-            building_number,
-            unit_number,
-        })
+        Ok(())
     }
 }
 
@@ -123,6 +151,15 @@ impl UnitOverviewNaturalKey {
 pub struct UnitOverviewRequest {
     /// ID/natural-key choice.
     pub selector: UnitOverviewSelector,
+}
+
+impl UnitOverviewRequest {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match &self.selector {
+            UnitOverviewSelector::Id(_) => Ok(()),
+            UnitOverviewSelector::Number(key) => key.validate(),
+        }
+    }
 }
 
 /// Ownership-sheet preview lookup by internal ID or natural key.
@@ -146,16 +183,22 @@ pub struct OwnershipSheetNaturalKey {
 impl OwnershipSheetNaturalKey {
     /// Validates the ownership-sheet number range.
     pub fn new(cadastral_area: CadastralAreaCode, sheet_number: u32) -> Result<Self> {
-        if !(1..=999_999).contains(&sheet_number) {
+        let value = Self {
+            cadastral_area,
+            sheet_number,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(1..=999_999).contains(&self.sheet_number) {
             return Err(Error::invalid_input(
                 "sheet_number",
                 "ownership-sheet number must be in 1..=999999",
             ));
         }
-        Ok(Self {
-            cadastral_area,
-            sheet_number,
-        })
+        Ok(())
     }
 }
 
@@ -164,6 +207,15 @@ impl OwnershipSheetNaturalKey {
 pub struct OwnershipSheetPreviewRequest {
     /// ID/natural-key choice.
     pub selector: OwnershipSheetPreviewSelector,
+}
+
+impl OwnershipSheetPreviewRequest {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match &self.selector {
+            OwnershipSheetPreviewSelector::Id(_) => Ok(()),
+            OwnershipSheetPreviewSelector::Number(key) => key.validate(),
+        }
+    }
 }
 
 /// One of the three WSDP 3.1 `informace` requests.
@@ -175,6 +227,16 @@ pub enum InformationRequest {
     UnitOverview(UnitOverviewRequest),
     /// `dejNahledLV`.
     OwnershipSheetPreview(OwnershipSheetPreviewRequest),
+}
+
+impl InformationRequest {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match self {
+            Self::ParcelBoundingBoxes(request) => request.validate(),
+            Self::UnitOverview(request) => request.validate(),
+            Self::OwnershipSheetPreview(request) => request.validate(),
+        }
+    }
 }
 
 /// Optional GML coordinate-reference metadata from `SRSReferenceGroup`.
@@ -348,5 +410,42 @@ mod tests {
         assert!(OwnershipSheetNaturalKey::new(CadastralAreaCode::new("1").unwrap(), 0).is_err());
         assert!(UnitBuildingNumber::new("123456789012345678901234567890").is_ok());
         assert!(UnitBuildingNumber::new("1234567890123456789012345678901").is_err());
+        let raw = " \t+123456789012345678901234567890\r\n";
+        assert_eq!(UnitBuildingNumber::new(raw).unwrap().as_str(), raw);
+        assert!(UnitBuildingNumber::new(" +1234567890123456789012345678901 ").is_err());
+        assert!(UnitBuildingNumber::new("++1").is_err());
+        assert!(
+            ParcelBoundingBoxRequest {
+                parcel_ids: Vec::new()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            UnitOverviewNaturalKey {
+                municipality_part: MunicipalityPartCode::new("1").unwrap(),
+                building_type: BuildingTypeCode::new("1").unwrap(),
+                building_number: UnitBuildingNumber::new("1").unwrap(),
+                unit_number: 10_000_000_000,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            OwnershipSheetNaturalKey {
+                cadastral_area: CadastralAreaCode::new("1").unwrap(),
+                sheet_number: 0,
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn building_number_deserialization_uses_the_validating_constructor() {
+        let number: UnitBuildingNumber = serde_json::from_str("\" +0001 \"").unwrap();
+        assert_eq!(number.as_str(), " +0001 ");
+        assert!(serde_json::from_str::<UnitBuildingNumber>("\"0\"").is_err());
     }
 }

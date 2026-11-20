@@ -5,6 +5,7 @@ mod id;
 pub(crate) mod information;
 mod legal_relation;
 mod report;
+pub mod reports;
 pub(crate) mod search;
 
 pub use account::NewPassword;

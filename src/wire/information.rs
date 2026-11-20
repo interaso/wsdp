@@ -8,7 +8,9 @@ use super::search::{
     decode_building, decode_building_right, decode_cadastral_area, decode_ownership, decode_parcel,
     decode_subject, decode_unit,
 };
-use super::soap::{XmlResult, child, children, is_nil, require_tag, simple_content, text_element};
+use super::soap::{
+    XmlResult, child as soap_child, children, is_nil, require_tag, simple_content, text_element,
+};
 use crate::client::Operation;
 use crate::error::{Error, Result};
 use crate::model::ServiceKind;
@@ -19,6 +21,7 @@ use crate::model::information::{
     ParcelBoundingBoxResponse, SJtskPoint, SpatialReference, UnitOverviewResponse,
     UnitOverviewSelector,
 };
+use crate::model::search::{trim_xml_whitespace, unsigned_integer_digits};
 
 const INFORMATION_NS: &str = "urn:cz:gov:cuzk:iskn:types:wsdp:informace:3.1";
 const GML_NS: &str = "http://www.opengis.net/gml/3.2";
@@ -45,6 +48,9 @@ pub(crate) fn operation(request: &Request) -> Operation {
 
 /// Writes the operation-specific children of the SOAP request element.
 pub(crate) fn write_request(writer: &mut Writer<Vec<u8>>, request: &Request) -> XmlResult {
+    request
+        .validate()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
     match request {
         Request::ParcelBoundingBoxes(request) => {
             for id in &request.parcel_ids {
@@ -131,6 +137,15 @@ pub(crate) fn decode_response(request: &Request, response: Node<'_, '_>) -> Resu
     }
 }
 
+fn reject_nil(node: Node<'_, '_>, name: &str) -> Result<()> {
+    if is_nil(node) {
+        return Err(Error::invalid_response(format!(
+            "XML element {name} is nil but is not nillable"
+        )));
+    }
+    Ok(())
+}
+
 fn decode_mbr_response(response: Node<'_, '_>) -> Result<ParcelBoundingBoxResponse> {
     let Some(info_list) = child(response, INFORMATION_NS, "infoList")? else {
         return Ok(ParcelBoundingBoxResponse { entries: None });
@@ -145,6 +160,7 @@ fn decode_mbr_response(response: Node<'_, '_>) -> Result<ParcelBoundingBoxRespon
 }
 
 fn decode_mbr(node: Node<'_, '_>) -> Result<ParcelBoundingBox> {
+    reject_nil(node, "MBR")?;
     let id_list = required_child(node, INFORMATION_NS, "IDList")?;
     let id_kind = id_list.attribute("typ").unwrap_or("PAR_S").to_owned();
     if id_kind != "PAR_S" {
@@ -188,6 +204,7 @@ fn decode_mbr(node: Node<'_, '_>) -> Result<ParcelBoundingBox> {
 }
 
 fn decode_envelope(node: Node<'_, '_>) -> Result<BoundingEnvelope> {
+    reject_nil(node, "Envelope")?;
     let reference = spatial_reference(node)?;
     let lower = child(node, GML_NS, "lowerCorner")?;
     let upper = child(node, GML_NS, "upperCorner")?;
@@ -223,22 +240,27 @@ fn decode_envelope(node: Node<'_, '_>) -> Result<BoundingEnvelope> {
 }
 
 fn decode_position(node: Node<'_, '_>) -> Result<SJtskPoint> {
+    reject_nil(node, "position")?;
     let reference = spatial_reference(node)?;
     let text = simple_content(node, "position")?;
-    let coordinates = text.split_whitespace().collect::<Vec<_>>();
+    let coordinates = text
+        .split([' ', '\t', '\r', '\n'])
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
     if coordinates.len() != 2 {
         return Err(Error::invalid_response(
             "an S-JTSK GML position must contain exactly Y and X",
         ));
     }
     Ok(SJtskPoint {
-        y: parse_decimal(coordinates[0])?,
-        x: parse_decimal(coordinates[1])?,
+        y: parse_double(coordinates[0])?,
+        x: parse_double(coordinates[1])?,
         reference,
     })
 }
 
 fn decode_coordinates(node: Node<'_, '_>) -> Result<(SJtskPoint, SJtskPoint, EnvelopeEncoding)> {
+    reject_nil(node, "coordinates")?;
     let decimal_separator = node.attribute("decimal").unwrap_or(".").to_owned();
     let coordinate_separator = node.attribute("cs").unwrap_or(",").to_owned();
     let tuple_separator = node.attribute("ts").unwrap_or(" ").to_owned();
@@ -270,8 +292,8 @@ fn decode_coordinates(node: Node<'_, '_>) -> Result<(SJtskPoint, SJtskPoint, Env
         let y = normalize_decimal(ordinates[0].trim(), &decimal_separator);
         let x = normalize_decimal(ordinates[1].trim(), &decimal_separator);
         points.push(SJtskPoint {
-            y: parse_decimal(&y)?,
-            x: parse_decimal(&x)?,
+            y: parse_double(&y)?,
+            x: parse_double(&x)?,
             reference: SpatialReference::default(),
         });
     }
@@ -294,23 +316,125 @@ fn normalize_decimal(value: &str, separator: &str) -> String {
     }
 }
 
-fn parse_decimal(value: &str) -> Result<Decimal> {
-    crate::model::parse_decimal(value, "S-JTSK coordinate")
+fn parse_double(value: &str) -> Result<Decimal> {
+    let value = trim_xml_whitespace(value);
+    let invalid = || Error::invalid_input("double", "expected a finite XML double");
+    if matches!(value, "INF" | "-INF" | "NaN") {
+        return Err(invalid());
+    }
+    let (negative, unsigned) = match value.as_bytes().first() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
+    };
+    let exponent_start = unsigned.find(['e', 'E']);
+    let (mantissa, exponent) = match exponent_start {
+        Some(index) => (
+            &unsigned[..index],
+            parse_double_exponent(&unsigned[index + 1..]).ok_or_else(invalid)?,
+        ),
+        None => (unsigned, 0),
+    };
+    let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if (integer.is_empty() && fraction.is_empty())
+        || !integer
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return Err(invalid());
+    }
+    let mut coefficient = String::with_capacity(integer.len() + fraction.len());
+    coefficient.push_str(integer);
+    coefficient.push_str(fraction);
+    if coefficient.bytes().all(|byte| byte == b'0') {
+        return Ok(Decimal::ZERO);
+    }
+    let significant = coefficient.trim_start_matches('0');
+    let trailing_zeroes = significant.len() - significant.trim_end_matches('0').len();
+    let significant = significant.trim_end_matches('0');
+    let power = exponent
+        .saturating_sub(fraction.len() as i128)
+        .saturating_add(trailing_zeroes as i128);
+    if significant.len() > 29 {
+        return Err(Error::DecimalOutOfRange {
+            field: "S-JTSK coordinate",
+        });
+    }
+
+    let mut canonical = String::new();
+    if negative {
+        canonical.push('-');
+    }
+    if power >= 0 {
+        if significant.len() as i128 + power > 29 {
+            return Err(Error::DecimalOutOfRange {
+                field: "S-JTSK coordinate",
+            });
+        }
+        canonical.push_str(significant);
+        canonical.extend(std::iter::repeat_n('0', power as usize));
+    } else {
+        let scale = power.saturating_neg();
+        if scale > 28 {
+            return Err(Error::DecimalOutOfRange {
+                field: "S-JTSK coordinate",
+            });
+        }
+        let decimal_position = significant.len() as i128 - scale;
+        if decimal_position <= 0 {
+            canonical.push_str("0.");
+            canonical.extend(std::iter::repeat_n('0', (-decimal_position) as usize));
+            canonical.push_str(significant);
+        } else {
+            let decimal_position = decimal_position as usize;
+            canonical.push_str(&significant[..decimal_position]);
+            canonical.push('.');
+            canonical.push_str(&significant[decimal_position..]);
+        }
+    }
+    crate::model::parse_decimal(&canonical, "S-JTSK coordinate")
+}
+
+fn parse_double_exponent(value: &str) -> Option<i128> {
+    let (negative, digits) = match value.as_bytes().first() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let exponent = digits.bytes().fold(0_i128, |value, digit| {
+        value
+            .saturating_mul(10)
+            .saturating_add(i128::from(digit - b'0'))
+    });
+    Some(if negative {
+        exponent.saturating_neg()
+    } else {
+        exponent
+    })
 }
 
 fn spatial_reference(node: Node<'_, '_>) -> Result<SpatialReference> {
     let dimension = node
         .attribute("srsDimension")
         .map(|value| {
-            value
+            let dimension = unsigned_integer_digits(value)
+                .ok_or_else(|| {
+                    Error::invalid_response("GML srsDimension is not a positive integer")
+                })?
                 .parse::<u32>()
-                .map_err(|_| Error::invalid_response("GML srsDimension is not a positive integer"))
+                .map_err(|_| {
+                    Error::invalid_response("GML srsDimension is not a positive integer")
+                })?;
+            if dimension == 0 {
+                return Err(Error::invalid_response("GML srsDimension must be positive"));
+            }
+            Ok(dimension)
         })
-        .transpose()?
-        .filter(|dimension| *dimension > 0);
-    if node.attribute("srsDimension").is_some() && dimension.is_none() {
-        return Err(Error::invalid_response("GML srsDimension must be positive"));
-    }
+        .transpose()?;
     let axis_labels = node.attribute("axisLabels").map(|value| {
         value
             .split_whitespace()
@@ -337,6 +461,7 @@ fn spatial_reference(node: Node<'_, '_>) -> Result<SpatialReference> {
 }
 
 fn decode_ownership_sheet(node: Node<'_, '_>) -> Result<OwnershipSheet> {
+    reject_nil(node, "LV")?;
     Ok(OwnershipSheet {
         id: required_parse(node, INFORMATION_NS, "idLV")?,
         cadastral_area: decode_cadastral_area(required_child(
@@ -344,16 +469,31 @@ fn decode_ownership_sheet(node: Node<'_, '_>) -> Result<OwnershipSheet> {
             INFORMATION_NS,
             "katastralniUzemi",
         )?)?,
-        number: required_parse(node, INFORMATION_NS, "lvCislo")?,
+        number: required_sheet_number(node)?,
     })
 }
 
 fn decode_detailed_unit(node: Node<'_, '_>) -> Result<DetailedUnit> {
+    reject_nil(node, "jednotka")?;
     Ok(DetailedUnit {
         unit: decode_unit(node)?,
         type_name: optional_text(node, INFORMATION_NS, "typNazev")?,
         use_name: optional_text(node, INFORMATION_NS, "zpuVyNazev")?,
     })
+}
+
+fn child<'a, 'input>(
+    node: Node<'a, 'input>,
+    namespace: &str,
+    name: &str,
+) -> Result<Option<Node<'a, 'input>>> {
+    let element = soap_child(node, namespace, name)?;
+    if element.is_some_and(is_nil) {
+        return Err(Error::invalid_response(format!(
+            "XML element {name} is nil but is not nillable"
+        )));
+    }
+    Ok(element)
 }
 
 fn required_child<'a, 'input>(
@@ -365,6 +505,16 @@ fn required_child<'a, 'input>(
         .ok_or_else(|| Error::invalid_response(format!("required XML element {name} is missing")))
 }
 
+fn required_sheet_number(node: Node<'_, '_>) -> Result<u32> {
+    let raw = required_child(node, INFORMATION_NS, "lvCislo")?;
+    let raw = simple_content(raw, "lvCislo")?;
+    let number = unsigned_integer_digits(&raw)
+        .and_then(|digits| digits.parse::<u32>().ok())
+        .filter(|number| (1..=999_999).contains(number))
+        .ok_or_else(|| Error::invalid_response("XML element lvCislo is outside its XSD range"))?;
+    Ok(number)
+}
+
 fn required_parse<T: FromStr>(node: Node<'_, '_>, namespace: &str, name: &str) -> Result<T> {
     let node = required_child(node, namespace, name)?;
     parse_node(node, name)
@@ -374,9 +524,6 @@ fn optional_text(node: Node<'_, '_>, namespace: &str, name: &str) -> Result<Opti
     let Some(element) = child(node, namespace, name)? else {
         return Ok(None);
     };
-    if is_nil(element) {
-        return Ok(None);
-    }
     simple_content(element, name).map(Some)
 }
 
@@ -421,7 +568,7 @@ mod tests {
 
     fn decoded(request: &Request, response_name: &str, contents: &str) -> Result<Response> {
         let xml = format!(
-            r#"<{response_name} xmlns="{INFORMATION_NS}" xmlns:c="{COMMON_NS}" xmlns:gml="{GML_NS}">{contents}</{response_name}>"#
+            r#"<{response_name} xmlns="{INFORMATION_NS}" xmlns:c="{COMMON_NS}" xmlns:gml="{GML_NS}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{contents}</{response_name}>"#
         );
         let document = Document::parse(&xml).unwrap();
         decode_response(request, document.root_element())
@@ -510,6 +657,37 @@ mod tests {
     }
 
     #[test]
+    fn serialization_rechecks_invalid_public_fields_before_writing() {
+        let requests = vec![
+            Request::ParcelBoundingBoxes(ParcelBoundingBoxRequest {
+                parcel_ids: Vec::new(),
+            }),
+            Request::UnitOverview(UnitOverviewRequest {
+                selector: UnitOverviewSelector::Number(UnitOverviewNaturalKey {
+                    municipality_part: MunicipalityPartCode::new("123").unwrap(),
+                    building_type: BuildingTypeCode::new("1").unwrap(),
+                    building_number: crate::model::information::UnitBuildingNumber::new("456")
+                        .unwrap(),
+                    unit_number: 10_000_000_000,
+                }),
+            }),
+            Request::OwnershipSheetPreview(
+                crate::model::information::OwnershipSheetPreviewRequest {
+                    selector: OwnershipSheetPreviewSelector::Number(OwnershipSheetNaturalKey {
+                        cadastral_area: CadastralAreaCode::new("693936").unwrap(),
+                        sheet_number: 0,
+                    }),
+                },
+            ),
+        ];
+        for request in requests {
+            let mut writer = Writer::new(Vec::new());
+            assert!(write_request(&mut writer, &request).is_err());
+            assert!(writer.into_inner().is_empty());
+        }
+    }
+
+    #[test]
     fn mbr_decodes_repeated_ids_envelope_null_and_list_presence() {
         let request = mbr_request();
         let contents = r#"<infoList><MBRList>
@@ -583,15 +761,88 @@ mod tests {
                 field: "S-JTSK coordinate"
             })
         ));
+    }
 
-        let exponent = r#"<infoList><MBRList><MBR><IDList><ID>1</ID></IDList><gml:boundedBy><gml:Envelope><gml:lowerCorner>-1e3 -2e3</gml:lowerCorner><gml:upperCorner>1 1</gml:upperCorner></gml:Envelope></gml:boundedBy></MBR></MBRList></infoList>"#;
-        assert!(matches!(
-            decoded(&request, "DejMBRParcelResponse", exponent),
-            Err(Error::InvalidInput {
-                field: "decimal",
-                ..
-            })
-        ));
+    #[test]
+    fn direct_positions_accept_exact_finite_scientific_doubles() {
+        for (raw, expected) in [
+            ("-1.25e3", Decimal::new(-1250, 0)),
+            ("+125E-2", Decimal::new(125, 2)),
+            (".5e1", Decimal::new(5, 0)),
+            ("5.e-1", Decimal::new(5, 1)),
+            ("10e-29", Decimal::new(1, 28)),
+            ("0e999999999999999999999999", Decimal::ZERO),
+            (
+                "7.9228162514264337593543950335e28",
+                Decimal::from_str("79228162514264337593543950335").unwrap(),
+            ),
+        ] {
+            let actual = parse_double(raw).unwrap_or_else(|error| panic!("{raw}: {error}"));
+            assert_eq!(actual, expected, "{raw}");
+        }
+        for raw in ["INF", "-INF", "NaN", "1e", "1,2", "1e2e3"] {
+            assert!(parse_double(raw).is_err(), "{raw}");
+        }
+        for raw in [
+            "1e29",
+            "1e-29",
+            "7.9228162514264337593543950336e28",
+            "1e999999999999999999999999",
+        ] {
+            assert!(matches!(
+                parse_double(raw),
+                Err(Error::DecimalOutOfRange {
+                    field: "S-JTSK coordinate"
+                })
+            ));
+        }
+
+        let request = mbr_request();
+        let coordinates = r#"<infoList><MBRList><MBR><IDList><ID>1</ID></IDList><gml:boundedBy><gml:Envelope><gml:lowerCorner>-1.25e3 -2.5E3</gml:lowerCorner><gml:upperCorner>125e-2 250e-2</gml:upperCorner></gml:Envelope></gml:boundedBy></MBR></MBRList></infoList>"#;
+        let Response::ParcelBoundingBoxes(result) =
+            decoded(&request, "DejMBRParcelResponse", coordinates).unwrap()
+        else {
+            panic!("wrong response variant");
+        };
+        let BoundingGeometry::Envelope(envelope) = &result.entries.unwrap()[0].geometry else {
+            panic!("expected envelope");
+        };
+        assert_eq!(envelope.lower.y, Decimal::new(-1250, 0));
+        assert_eq!(envelope.lower.x, Decimal::new(-2500, 0));
+        assert_eq!(envelope.upper.y, Decimal::new(125, 2));
+        assert_eq!(envelope.upper.x, Decimal::new(250, 2));
+
+        let nonfinite = coordinates.replace("-1.25e3", "NaN");
+        assert!(decoded(&request, "DejMBRParcelResponse", &nonfinite).is_err());
+    }
+
+    #[test]
+    fn information_responses_reject_nil_and_enforce_lv_ranges() {
+        let request = Request::UnitOverview(UnitOverviewRequest {
+            selector: UnitOverviewSelector::Id(UnitId::new("10").unwrap()),
+        });
+        let lv = |number: &str| {
+            format!(
+                "<LV><idLV>30</idLV><katastralniUzemi><c:kod>693936</c:kod></katastralniUzemi><lvCislo>{number}</lvCislo></LV>"
+            )
+        };
+        let Response::UnitOverview(result) =
+            decoded(&request, "DejInfoOJednotceResponse", &lv(" +00010 ")).unwrap()
+        else {
+            panic!("wrong response variant");
+        };
+        assert_eq!(result.ownership_sheet.unwrap().number, 10);
+        for invalid in ["0", "1000000", "-1"] {
+            assert!(
+                decoded(&request, "DejInfoOJednotceResponse", &lv(invalid)).is_err(),
+                "{invalid}"
+            );
+        }
+        let nil_lv = lv("10").replace("<LV>", "<LV xsi:nil=\"true\">");
+        assert!(decoded(&request, "DejInfoOJednotceResponse", &nil_lv).is_err());
+
+        let unit = r#"<jednotka><c:idJednotky>10</c:idJednotky><c:stavba><c:idStavby>20</c:idStavby><c:typStavbyKod>1</c:typStavbyKod><c:castObceKod>123</c:castObceKod><c:cisloDomovni>4</c:cisloDomovni></c:stavba><c:typJedKod>1</c:typJedKod><c:cislo>7</c:cislo><typNazev xsi:nil="true">Byt</typNazev></jednotka>"#;
+        assert!(decoded(&request, "DejInfoOJednotceResponse", unit).is_err());
     }
 
     #[test]

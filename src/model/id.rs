@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use rust_decimal::Decimal;
 
+use super::common::{positive_integer_digits, trim_xml_whitespace};
 use crate::{Error, Result};
 
 macro_rules! string_id {
@@ -110,11 +111,13 @@ string_id!(
 );
 
 fn validate_id(value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.len() > 30
-        || !value.bytes().all(|byte| byte.is_ascii_digit())
-        || value.bytes().all(|byte| byte == b'0')
-    {
+    let Some(digits) = positive_integer_digits(value) else {
+        return Err(Error::invalid_input(
+            "id",
+            "expected a positive decimal integer with at most 30 digits",
+        ));
+    };
+    if digits.len() > 30 {
         return Err(Error::invalid_input(
             "id",
             "expected a positive decimal integer with at most 30 digits",
@@ -135,13 +138,13 @@ macro_rules! numeric_code {
             #[doc = "Validates a positive decimal code and preserves leading zeroes."]
             pub fn new(value: impl Into<String>) -> Result<Self> {
                 let value = value.into();
-                if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                    return Err(Error::invalid_input("code", "expected decimal digits"));
-                }
-                let significant = value.trim_start_matches('0');
-                if significant.is_empty() {
-                    return Err(Error::invalid_input("code", "code must be positive"));
-                }
+                let Some(digits) = positive_integer_digits(&value) else {
+                    return Err(Error::invalid_input(
+                        "code",
+                        "expected a positive decimal integer",
+                    ));
+                };
+                let significant = digits.trim_start_matches('0');
                 let numeric = significant.parse::<u64>().map_err(|_| {
                     Error::invalid_input("code", "code is outside the supported range")
                 })?;
@@ -211,13 +214,27 @@ numeric_code!(
 );
 
 /// A legacy report identifier, which can be empty and has no `IdType` digit limit.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Default, Eq, Hash, PartialEq)]
 pub struct LegacyId(String);
 
 impl LegacyId {
-    /// Retains any legacy identifier text, including the empty string.
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    /// Validates legacy `ID_TYPE`: either empty or an XML positive integer.
+    ///
+    /// Surrounding XML whitespace and a leading `+` are accepted for non-empty
+    /// values, while the original text is retained. There is no numeric digit limit.
+    pub fn new(value: impl Into<String>) -> Result<Self> {
+        let value = value.into();
+        if value.is_empty() {
+            return Ok(Self(value));
+        }
+        let normalized = trim_xml_whitespace(&value);
+        if positive_integer_digits(normalized).is_none() {
+            return Err(Error::invalid_input(
+                "legacy_id",
+                "expected empty text or a positive integer",
+            ));
+        }
+        Ok(Self(value))
     }
 
     /// Returns the untouched identifier text.
@@ -226,9 +243,23 @@ impl LegacyId {
     }
 }
 
+impl FromStr for LegacyId {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        Self::new(value)
+    }
+}
+
 impl fmt::Display for LegacyId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
+    }
+}
+
+impl fmt::Debug for LegacyId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LegacyId([ID])")
     }
 }
 
@@ -244,19 +275,28 @@ pub struct ParcelNumber {
 impl ParcelNumber {
     /// Validates a parcel number without interpreting omitted subdivision as a wildcard.
     pub fn new(root: u32, subdivision: Option<u16>) -> Result<Self> {
-        if root > 99_999 {
+        let value = Self { root, subdivision };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.root > 99_999 {
             return Err(Error::invalid_input(
                 "root",
                 "parcel root must be at most 99999",
             ));
         }
-        if subdivision.is_some_and(|value| value == 0 || value > 999) {
+        if self
+            .subdivision
+            .is_some_and(|value| value == 0 || value > 999)
+        {
             return Err(Error::invalid_input(
                 "subdivision",
                 "parcel subdivision must be in 1..=999",
             ));
         }
-        Ok(Self { root, subdivision })
+        Ok(())
     }
 }
 
@@ -336,8 +376,16 @@ mod tests {
         let raw = "123456789012345678901234567890";
         assert_eq!(ParcelId::new(raw).unwrap().as_str(), raw);
         assert!(ParcelId::new("1234567890123456789012345678901").is_err());
+        let with_xml_syntax = format!(" \t+{raw}\r\n");
+        assert_eq!(
+            ParcelId::new(with_xml_syntax.clone()).unwrap().as_str(),
+            with_xml_syntax
+        );
+        assert!(ParcelId::new(" +1234567890123456789012345678901 ").is_err());
         assert!(ParcelId::new("0").is_err());
+        assert!(ParcelId::new("+000").is_err());
         assert!(ParcelId::new("12x").is_err());
+        assert!(ParcelId::new("++1").is_err());
         assert!(ParcelId::new("").is_err());
     }
 
@@ -351,7 +399,12 @@ mod tests {
                 .as_str(),
             many_zeroes
         );
+        assert_eq!(
+            CadastralAreaCode::new(" \t+000001\r\n").unwrap().as_str(),
+            " \t+000001\r\n"
+        );
         assert!(CadastralAreaCode::new("1000000").is_err());
+        assert!(CadastralAreaCode::new("+1000000").is_err());
         assert!(WorkplaceCode::new("1000").is_err());
     }
 
@@ -388,6 +441,8 @@ mod tests {
     fn serde_deserialization_uses_the_same_id_validation() {
         let id: ParcelId = serde_json::from_str("\"000123\"").unwrap();
         assert_eq!(id.as_str(), "000123");
+        let id: ParcelId = serde_json::from_str("\" \\t+000123\\n\"").unwrap();
+        assert_eq!(id.as_str(), " \t+000123\n");
         assert!(serde_json::from_str::<ParcelId>("\"0\"").is_err());
     }
 }

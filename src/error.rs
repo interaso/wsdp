@@ -2,6 +2,34 @@ use std::fmt;
 
 use crate::{MessageLevel, ServiceMessage};
 
+/// Lifecycle stage associated with a report-scoped failure.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum ReportStage {
+    /// Status/list refresh.
+    Status,
+    /// Bounded waiting.
+    Wait,
+    /// Approved download.
+    Download,
+    /// Typed payload decoding.
+    Decode,
+    /// Explicit deletion.
+    Delete,
+}
+
+impl fmt::Display for ReportStage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Status => "status",
+            Self::Wait => "wait",
+            Self::Download => "download",
+            Self::Decode => "decode",
+            Self::Delete => "delete",
+        })
+    }
+}
+
 /// An application-level WSDP error containing the complete server message list.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ServiceError {
@@ -85,6 +113,13 @@ pub enum Error {
     #[error("{0}")]
     Service(#[from] ServiceError),
 
+    /// An exact decimal cannot be represented without rounding or truncation.
+    #[error("decimal value for {field} exceeds the supported exact range")]
+    DecimalOutOfRange {
+        /// Safe field or schema-type name; the sensitive raw value is omitted.
+        field: &'static str,
+    },
+
     /// A response exceeded its configured buffered-byte limit.
     #[error("WSDP response exceeded the configured {limit}-byte limit")]
     ResponseTooLarge {
@@ -103,9 +138,73 @@ pub enum Error {
     #[error("could not initialize WS-Security randomness")]
     Randomness,
 
+    /// Report generation was dispatched but its acceptance cannot be established.
+    #[error("report-generation outcome is uncertain: {source}")]
+    SubmissionUncertain {
+        /// Safe underlying transport, HTTP, or decoding error.
+        source: Box<Error>,
+    },
+
+    /// A potentially charging report download has an ambiguous outcome.
+    #[error("report download has an uncertain charging outcome: {source}")]
+    ChargeUncertain {
+        /// Report ID that can be reconciled through `report_status`.
+        id: crate::ReportId,
+        /// Safe underlying transport, HTTP, MTOM, or decoding error.
+        source: Box<Error>,
+    },
+
+    /// Bounded report waiting elapsed before a ready state.
+    #[error("report wait deadline elapsed")]
+    ReportWaitTimeout {
+        /// Report ID to resume later without regeneration.
+        id: crate::ReportId,
+    },
+
+    /// A report is missing, not ready, failed, cancelled, or otherwise unavailable.
+    #[error("report is not available for the requested {stage} operation")]
+    ReportUnavailable {
+        /// Affected report ID.
+        id: crate::ReportId,
+        /// Lifecycle stage that found the report unavailable.
+        stage: ReportStage,
+    },
+
+    /// A report-scoped operation failed while retaining its resumable ID.
+    #[error("report {stage} operation failed: {source}")]
+    ReportOperation {
+        /// Report ID to reuse for recovery; it is intentionally not displayed.
+        id: crate::ReportId,
+        /// Lifecycle stage that failed.
+        stage: ReportStage,
+        /// Safe underlying error.
+        source: Box<Error>,
+    },
+
+    /// The server did not provide the current price needed for approval.
+    #[error("report price is unavailable")]
+    ReportPriceUnavailable {
+        /// Affected report ID.
+        id: crate::ReportId,
+    },
+
+    /// The exact server price exceeds the caller's approval.
+    #[error("report price exceeds the explicit charge approval")]
+    ChargeLimitExceeded {
+        /// Affected report ID.
+        id: crate::ReportId,
+    },
+
     /// Credentials must be replaced after an ambiguous password change.
     #[error("credentials must be replaced explicitly before further requests")]
     CredentialsRequired,
+
+    /// A password change was dispatched but its outcome cannot be established.
+    #[error("password-change outcome is uncertain: {source}")]
+    PasswordChangeUncertain {
+        /// Safe underlying transport, HTTP, or decoding error.
+        source: Box<Error>,
+    },
 }
 
 impl Error {
@@ -136,6 +235,48 @@ impl Error {
     /// Returns true for a relevant record-not-found response.
     pub fn is_not_found(&self) -> bool {
         matches!(self, Self::Service(error) if error.messages().iter().any(|message| message.code == crate::MessageCode::RecordNotFound))
+    }
+
+    /// Returns a report ID retained by a lifecycle error, when known.
+    pub fn report_id(&self) -> Option<&crate::ReportId> {
+        match self {
+            Self::ChargeUncertain { id, .. }
+            | Self::ReportWaitTimeout { id }
+            | Self::ReportUnavailable { id, .. }
+            | Self::ReportPriceUnavailable { id }
+            | Self::ChargeLimitExceeded { id }
+            | Self::ReportOperation { id, .. } => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Returns the lifecycle stage retained by a report-scoped error.
+    pub fn report_stage(&self) -> Option<ReportStage> {
+        match self {
+            Self::ReportOperation { stage, .. } | Self::ReportUnavailable { stage, .. } => {
+                Some(*stage)
+            }
+            Self::ReportWaitTimeout { .. } => Some(ReportStage::Wait),
+            Self::ChargeUncertain { .. }
+            | Self::ReportPriceUnavailable { .. }
+            | Self::ChargeLimitExceeded { .. } => Some(ReportStage::Download),
+            _ => None,
+        }
+    }
+
+    /// Returns true when dispatched report generation has an ambiguous outcome.
+    pub fn submission_outcome_uncertain(&self) -> bool {
+        matches!(self, Self::SubmissionUncertain { .. })
+    }
+
+    /// Returns true when a dispatched download has an ambiguous charging outcome.
+    pub fn charge_outcome_uncertain(&self) -> bool {
+        matches!(self, Self::ChargeUncertain { .. })
+    }
+
+    /// Returns true when a dispatched password change has an ambiguous outcome.
+    pub fn password_change_outcome_uncertain(&self) -> bool {
+        matches!(self, Self::PasswordChangeUncertain { .. })
     }
 
     /// Returns true when the server reports password expiration.

@@ -9,8 +9,18 @@ use secrecy::SecretString;
 use tokio::sync::Semaphore;
 
 use crate::error::{Error, Result};
-use crate::model::{Response, ServiceKind, ServiceStatus, XmlDateTime};
+use crate::model::{
+    AuthorizedSubject, Building, BuildingRight, BuildingRightSearch, BuildingSearch,
+    CodeListRequest, CodeListResult, CollectionDocument, CollectionDocumentSearch, GeometricPlan,
+    GeometricPlanSearch, InformationRequest, InformationResponse, NewPassword,
+    OwnershipSheetPreviewRequest, OwnershipSheetPreviewResponse, Parcel, ParcelBoundingBoxRequest,
+    ParcelBoundingBoxResponse, ParcelSearch, Proceeding, ProceedingSearch, ReportFamily,
+    ReportVersionInfo, Response, SearchRequest, SearchResponse, SearchResult, ServiceKind,
+    ServiceStatus, SubjectSearch, Unit, UnitOverviewRequest, UnitOverviewResponse, UnitSearch,
+    XmlDateTime,
+};
 use crate::wire::soap::{self, XmlLimits, XmlResult};
+use crate::wire::{account, code_list, information, report, search};
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -189,6 +199,263 @@ impl Client {
             },
         )
         .await
+    }
+
+    /// Executes any of the 33 typed WSDP 3.1 code-list operations.
+    ///
+    /// Filters are serialized exactly as supplied; `%` is neither added nor
+    /// interpreted locally. There is no pagination or hidden follow-up request.
+    pub async fn code_list(&self, request: CodeListRequest) -> Result<Response<CodeListResult>> {
+        let operation = code_list::operation(&request);
+        self.execute(
+            &operation,
+            |writer| code_list::write_request(writer, &request),
+            |response| code_list::decode_response(response, &request),
+        )
+        .await
+    }
+
+    /// Executes one of the eight typed WSDP lookup operations.
+    pub async fn search(&self, request: SearchRequest) -> Result<Response<SearchResponse>> {
+        let operation = search::operation(&request);
+        let mut response = self
+            .execute(
+                &operation,
+                |writer| search::write_request(writer, &request),
+                |node| search::decode_response(&request, node),
+            )
+            .await?;
+        response.value.refine_completion(&response.messages);
+        Ok(response)
+    }
+
+    /// Resolves parcels by internal ID or natural key.
+    pub async fn find_parcels(
+        &self,
+        query: ParcelSearch,
+    ) -> Result<Response<SearchResult<Parcel>>> {
+        let response = self.search(SearchRequest::Parcel(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::Parcels(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected parcel-search result")),
+        })
+    }
+
+    /// Resolves buildings by internal ID or natural key.
+    pub async fn find_buildings(
+        &self,
+        query: BuildingSearch,
+    ) -> Result<Response<SearchResult<Building>>> {
+        let response = self.search(SearchRequest::Building(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::Buildings(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected building-search result")),
+        })
+    }
+
+    /// Resolves units by internal ID or building/natural-key selector.
+    pub async fn find_units(&self, query: UnitSearch) -> Result<Response<SearchResult<Unit>>> {
+        let response = self.search(SearchRequest::Unit(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::Units(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected unit-search result")),
+        })
+    }
+
+    /// Resolves legal or natural-person/partnership subjects.
+    pub async fn find_subjects(
+        &self,
+        query: SubjectSearch,
+    ) -> Result<Response<SearchResult<AuthorizedSubject>>> {
+        let response = self.search(SearchRequest::Subject(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::Subjects(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected subject-search result")),
+        })
+    }
+
+    /// Resolves building rights by ID, parcel ID, or parcel natural key.
+    pub async fn find_building_rights(
+        &self,
+        query: BuildingRightSearch,
+    ) -> Result<Response<SearchResult<BuildingRight>>> {
+        let response = self.search(SearchRequest::BuildingRight(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::BuildingRights(result) => Ok(result),
+            _ => Err(Error::invalid_response(
+                "unexpected building-right-search result",
+            )),
+        })
+    }
+
+    /// Resolves proceedings by ID or complete natural key.
+    pub async fn find_proceedings(
+        &self,
+        query: ProceedingSearch,
+    ) -> Result<Response<SearchResult<Proceeding>>> {
+        let response = self.search(SearchRequest::Proceeding(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::Proceedings(result) => Ok(result),
+            _ => Err(Error::invalid_response(
+                "unexpected proceeding-search result",
+            )),
+        })
+    }
+
+    /// Resolves deeds in the collection using the proceeding selector.
+    pub async fn find_collection_documents(
+        &self,
+        query: CollectionDocumentSearch,
+    ) -> Result<Response<SearchResult<CollectionDocument>>> {
+        let response = self
+            .search(SearchRequest::CollectionDocument(query))
+            .await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::CollectionDocuments(result) => Ok(result),
+            _ => Err(Error::invalid_response(
+                "unexpected collection-document result",
+            )),
+        })
+    }
+
+    /// Resolves geometric-plan identifiers by cadastral area and ZPMZ number.
+    pub async fn find_geometric_plans(
+        &self,
+        query: GeometricPlanSearch,
+    ) -> Result<Response<SearchResult<GeometricPlan>>> {
+        let response = self.search(SearchRequest::GeometricPlan(query)).await?;
+        map_operation_response(response, |value| match value {
+            SearchResponse::GeometricPlans(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected geometric-plan result")),
+        })
+    }
+
+    /// Executes one of the three lightweight information operations.
+    pub async fn information(
+        &self,
+        request: InformationRequest,
+    ) -> Result<Response<InformationResponse>> {
+        let operation = information::operation(&request);
+        self.execute(
+            &operation,
+            |writer| information::write_request(writer, &request),
+            |node| information::decode_response(&request, node),
+        )
+        .await
+    }
+
+    /// Returns parcel bounding boxes with explicit S-JTSK Y/X ordering.
+    pub async fn parcel_bounding_boxes(
+        &self,
+        request: ParcelBoundingBoxRequest,
+    ) -> Result<Response<ParcelBoundingBoxResponse>> {
+        let response = self
+            .information(InformationRequest::ParcelBoundingBoxes(request))
+            .await?;
+        map_operation_response(response, |value| match value {
+            InformationResponse::ParcelBoundingBoxes(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected MBR information result")),
+        })
+    }
+
+    /// Returns current unit information when the account is eligible.
+    pub async fn unit_overview(
+        &self,
+        request: UnitOverviewRequest,
+    ) -> Result<Response<UnitOverviewResponse>> {
+        let response = self
+            .information(InformationRequest::UnitOverview(request))
+            .await?;
+        map_operation_response(response, |value| match value {
+            InformationResponse::UnitOverview(result) => Ok(*result),
+            _ => Err(Error::invalid_response(
+                "unexpected unit-information result",
+            )),
+        })
+    }
+
+    /// Returns the limited current LV preview when the account is eligible.
+    pub async fn ownership_sheet_preview(
+        &self,
+        request: OwnershipSheetPreviewRequest,
+    ) -> Result<Response<OwnershipSheetPreviewResponse>> {
+        let response = self
+            .information(InformationRequest::OwnershipSheetPreview(request))
+            .await?;
+        map_operation_response(response, |value| match value {
+            InformationResponse::OwnershipSheetPreview(result) => Ok(result),
+            _ => Err(Error::invalid_response("unexpected LV-preview result")),
+        })
+    }
+
+    /// Discovers XML report versions currently enabled by the server.
+    ///
+    /// `None` omits the family filter. `Some(&[])` deliberately sends an empty
+    /// filter. No version is inferred from schema comments.
+    pub async fn report_versions(
+        &self,
+        families: Option<&[ReportFamily]>,
+    ) -> Result<Response<Vec<ReportVersionInfo>>> {
+        self.execute(
+            &report::versions_operation(),
+            |writer| report::write_versions(writer, families),
+            report::decode_versions,
+        )
+        .await
+    }
+
+    /// Changes the account password once, without automatic retry.
+    ///
+    /// Confirmed success updates every clone. A definitive application or
+    /// authentication rejection retains the existing credentials. Any ambiguous
+    /// post-dispatch outcome blocks subsequent requests until
+    /// [`Client::replace_credentials`] is called with confirmed working values.
+    /// Never use this method with the shared public trial accounts.
+    pub async fn change_password(&self, new_password: NewPassword) -> Result<Response<()>> {
+        let result = self
+            .execute(
+                &account::change_password_operation(),
+                |writer| account::write_change_password(writer, &new_password),
+                |_response| Ok(()),
+            )
+            .await;
+        match result {
+            Ok(response) => {
+                let mut state = self
+                    .inner
+                    .credentials
+                    .write()
+                    .unwrap_or_else(|error| error.into_inner());
+                let username = state.credentials.username.clone();
+                state.credentials = Credentials {
+                    username,
+                    password: new_password.0,
+                };
+                Ok(response)
+            }
+            Err(error @ Error::Service(_)) | Err(error @ Error::Authentication { .. }) => {
+                Err(error)
+            }
+            Err(error @ Error::Transport(_)) if matches!(&error, Error::Transport(source) if source.is_connect()) => {
+                Err(error)
+            }
+            Err(
+                error @ (Error::InvalidInput { .. }
+                | Error::Randomness
+                | Error::CredentialsRequired),
+            ) => Err(error),
+            Err(error) => {
+                let mut state = self
+                    .inner
+                    .credentials
+                    .write()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                state.replacement_required = true;
+                Err(Error::PasswordChangeUncertain {
+                    source: Box::new(error),
+                })
+            }
+        }
     }
 
     #[cfg_attr(
@@ -417,6 +684,16 @@ impl ClientBuilder {
     }
 }
 
+fn map_operation_response<A, B>(
+    response: Response<A>,
+    map: impl FnOnce(A) -> Result<B>,
+) -> Result<Response<B>> {
+    Ok(Response {
+        value: map(response.value)?,
+        messages: response.messages,
+    })
+}
+
 fn optional_text(
     node: roxmltree::Node<'_, '_>,
     service: ServiceKind,
@@ -510,6 +787,73 @@ mod tests {
         ] {
             assert!(builder.build().is_err());
         }
+    }
+
+    #[tokio::test]
+    async fn report_version_discovery_retains_family_and_versions() {
+        let server = MockServer::start().await;
+        let body = r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><DejVerzeSestavResponse xmlns="urn:cz:gov:cuzk:iskn:types:wsdp:sestavy:3.1" xmlns:c="urn:cz:gov:cuzk:iskn:types:common:3.1"><vysledek><c:zprava kod="0" uroven="INFORMACE">ok</c:zprava></vysledek><verzeSestav><verzeSestavy><kodSestavy>VypisZKatastruNemovitosti</kodSestavy><nazevSestavy>LV</nazevSestavy><seznamVerzi><c:verze>1.0</c:verze><c:verze>3.0</c:verze></seznamVerzi></verzeSestavy></verzeSestav></DejVerzeSestavResponse></soap:Body></soap:Envelope>"#;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let versions = client.report_versions(None).await.unwrap().value;
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].family, ReportFamily::OwnershipSheet);
+        assert_eq!(
+            versions[0].versions,
+            vec![crate::ReportVersion::V1_0, crate::ReportVersion::V3_0]
+        );
+    }
+
+    #[tokio::test]
+    async fn confirmed_password_change_updates_all_clones() {
+        use secrecy::ExposeSecret as _;
+
+        let server = MockServer::start().await;
+        let body = r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ZmenHesloResponse xmlns="urn:cz:gov:cuzk:iskn:types:wsdp:ucet:3.1" xmlns:c="urn:cz:gov:cuzk:iskn:types:common:3.1"><vysledek><c:zprava kod="0" uroven="INFORMACE">ok</c:zprava></vysledek></ZmenHesloResponse></soap:Body></soap:Envelope>"#;
+        Mock::given(method("POST"))
+            .and(path("/ucet"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let clone = client.clone();
+        client
+            .change_password(NewPassword::new("new-sentinel").unwrap())
+            .await
+            .unwrap();
+        let state = clone.inner.credentials.read().unwrap();
+        assert_eq!(state.credentials.password.expose_secret(), "new-sentinel");
+        assert!(!state.replacement_required);
+    }
+
+    #[tokio::test]
+    async fn ambiguous_password_change_blocks_clones_until_replacement() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/ucet"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not XML"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let clone = client.clone();
+        let error = client
+            .change_password(NewPassword::new("new-sentinel").unwrap())
+            .await
+            .unwrap_err();
+        assert!(error.password_change_outcome_uncertain());
+        assert!(matches!(
+            clone.service_status(ServiceKind::Account).await,
+            Err(Error::CredentialsRequired)
+        ));
+        clone.replace_credentials(Credentials::new("confirmed", "confirmed-password"));
+        assert!(!clone.inner.credentials.read().unwrap().replacement_required);
     }
 
     #[tokio::test]

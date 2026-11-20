@@ -8,7 +8,5 @@ mod model;
 mod wire;
 
 pub use client::{Client, ClientBuilder, Credentials, Environment};
-pub use error::{Error, Result, ServiceError};
-pub use model::{
-    MessageCode, MessageLevel, Response, ServiceKind, ServiceMessage, ServiceStatus, XmlDateTime,
-};
+pub use error::{Error, ReportStage, Result, ServiceError};
+pub use model::*;

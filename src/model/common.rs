@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use rust_decimal::Decimal;
+
 /// A WSDP service family whose status can be queried independently.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ServiceKind {
@@ -208,6 +210,44 @@ pub struct ServiceStatus {
     pub processed_at: Option<XmlDateTime>,
 }
 
+pub(crate) fn parse_decimal(raw: &str, field: &'static str) -> crate::Result<Decimal> {
+    let bytes = raw.as_bytes();
+    let mut index = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    let mut digits = 0_usize;
+    let mut decimal_point = false;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'0'..=b'9' => digits += 1,
+            b'.' if !decimal_point => decimal_point = true,
+            _ => {
+                return Err(crate::Error::invalid_input(
+                    "decimal",
+                    "expected XML decimal lexical syntax",
+                ));
+            }
+        }
+        index += 1;
+    }
+    if digits == 0 {
+        return Err(crate::Error::invalid_input(
+            "decimal",
+            "XML decimal requires at least one digit",
+        ));
+    }
+    Decimal::from_str_exact(raw).map_err(|error| match error {
+        rust_decimal::Error::ExceedsMaximumPossibleValue
+        | rust_decimal::Error::LessThanMinimumPossibleValue
+        | rust_decimal::Error::Underflow
+        | rust_decimal::Error::ScaleExceedsMaximumPrecision(_) => {
+            crate::Error::DecimalOutOfRange { field }
+        }
+        rust_decimal::Error::ErrorString(message) if message.contains("overflow") => {
+            crate::Error::DecimalOutOfRange { field }
+        }
+        _ => crate::Error::invalid_input("decimal", "invalid XML decimal value"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +275,25 @@ mod tests {
             assert_eq!(XmlDateTime::new(raw).unwrap().as_str(), raw);
         }
         assert!(XmlDateTime::new("20.11.2026").is_err());
+    }
+
+    #[test]
+    fn exact_decimal_parser_never_rounds_or_accepts_non_xsd_syntax() {
+        assert_eq!(
+            parse_decimal("-12.25", "test").unwrap(),
+            Decimal::new(-1225, 2)
+        );
+        assert_eq!(parse_decimal(".5", "test").unwrap(), Decimal::new(5, 1));
+        for invalid in ["", "1e2", "1_000", "NaN", "1.2.3"] {
+            assert!(parse_decimal(invalid, "test").is_err(), "{invalid}");
+        }
+        assert!(matches!(
+            parse_decimal("999999999999999999999999999999999999999", "test"),
+            Err(crate::Error::DecimalOutOfRange { .. })
+        ));
+        assert!(matches!(
+            parse_decimal("0.00000000000000000000000000001", "test"),
+            Err(crate::Error::DecimalOutOfRange { .. })
+        ));
     }
 }

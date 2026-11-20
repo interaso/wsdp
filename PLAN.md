@@ -415,8 +415,9 @@ meaning and parser support depend on the report family.
 Each typed report family exposes `DEFAULT_VERSION`. `xml_default` resolves and
 **pins** that version on the wire before generation; it does not silently select
 whatever version happens to be newest on the server. Initially use `V1_0` for
-legacy XML families and NTR 3.0/`V3_0` for ownership sheets after Phase 0 confirms
-runtime availability. Changing a family default is consumer-visible behavior and
+legacy XML families and NTR 3.0/`V3_0` for ownership sheets. Trial verification on
+2026-11-20 confirmed that both LV 1.0 and NTR LV 3.0 are enabled. Changing a family
+default is consumer-visible behavior and
 must be documented in the changelog. Typed helpers reject `LatestAvailable`;
 raw callers opting into it receive metadata and untouched bytes for independent
 or later parsing.
@@ -689,8 +690,9 @@ NTR means **nové tiskové řešení** (“new print solution”), ČÚZK's newe
 report technology. Legacy LV 1.0 is uppercase and presentation-shaped; NTR LV
 3.0 is normalized, namespaced, and has richer metadata and recursive legal
 relations. Both formats receive complete typed models in the first release, as
-confirmed during design. NTR 3.0 is the default after runtime verification;
-legacy is explicitly selectable. NTR currently changes the LV report, not the
+confirmed during design. NTR 3.0 is the default; trial `dejVerzeSestav` confirmed
+its availability on 2026-11-20, and legacy remains explicitly selectable. NTR
+currently changes the LV report, not the
 parcel/building report schemas.
 
 The following is an architectural sketch rather than the final field-by-field
@@ -1681,8 +1683,9 @@ The release is functionally complete only when:
 These are not product-design blockers and should be resolved from official trial
 behavior rather than production experimentation:
 
-1. Which exact report versions does `dejVerzeSestav` currently enable for each
-   report family, especially NTR LV 3.0?
+1. Which exact report versions does `dejVerzeSestav` currently enable for non-LV
+   report families? Trial verification on 2026-11-20 already confirmed LV 1.0 and
+   NTR LV 3.0.
 2. Which operations return inline base64 versus MTOM/XOP in practice, and what
    multipart headers/start-part behavior must the decoder accept?
 3. Does the current trial service require or merely recommend Nonce/Created?

@@ -1,7 +1,10 @@
 use std::fmt;
 use std::str::FromStr;
 
-use super::common::{MessageCode, ServiceMessage, XmlDateTime};
+use super::common::{
+    MessageCode, ServiceMessage, XmlDateTime, positive_integer_digits, valid_xml_date,
+};
+pub(crate) use super::common::{trim_xml_whitespace, unsigned_integer_digits};
 use super::id::{
     BuildingId, BuildingRightId, CadastralAreaCode, CompanyId, DocumentId, MunicipalityPartCode,
     OwnershipId, OwnershipSheetId, ParcelId, ParcelNumber, PersonalIdentifier, ProceedingId,
@@ -17,7 +20,7 @@ impl XmlDate {
     /// Validates an `xs:date` without assigning a timezone to a naive date.
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
-        if valid_xml_date(&value) {
+        if valid_xml_date(trim_xml_whitespace(&value)) {
             Ok(Self(value))
         } else {
             Err(Error::invalid_input(
@@ -47,44 +50,19 @@ impl FromStr for XmlDate {
     }
 }
 
-fn valid_xml_date(value: &str) -> bool {
-    if !value.is_ascii() || value.len() < 10 || value[..10].parse::<jiff::civil::Date>().is_err() {
-        return false;
-    }
-    let suffix = &value[10..];
-    if suffix.is_empty() || suffix == "Z" {
-        return true;
-    }
-    let bytes = suffix.as_bytes();
-    if bytes.len() != 6
-        || !matches!(bytes[0], b'+' | b'-')
-        || bytes[3] != b':'
-        || !bytes[1..3]
-            .iter()
-            .chain(&bytes[4..])
-            .all(u8::is_ascii_digit)
-    {
-        return false;
-    }
-    let (Ok(hour), Ok(minute)) = (suffix[1..3].parse::<u8>(), suffix[4..6].parse::<u8>()) else {
-        return false;
-    };
-    minute <= 59 && (hour < 14 || (hour == 14 && minute == 0))
-}
-
 /// A building-type code (`KodTypuStavbyType`), preserving leading zeroes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct BuildingTypeCode(String);
 
 impl BuildingTypeCode {
     /// Validates the schema range 1–9 without discarding the lexical code.
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
-        let valid = !value.is_empty()
-            && value.bytes().all(|byte| byte.is_ascii_digit())
-            && value
-                .parse::<u8>()
-                .is_ok_and(|number| (1..=9).contains(&number));
+        let valid = positive_integer_digits(&value).is_some_and(|digits| {
+            matches!(digits.trim_start_matches('0').as_bytes(), [b'1'..=b'9'])
+        });
         if valid {
             Ok(Self(value))
         } else {
@@ -115,21 +93,36 @@ impl FromStr for BuildingTypeCode {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BuildingTypeCode {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// A positive numerator or denominator of an ownership share.
 ///
 /// The XSD permits 30 digits, so this deliberately does not use a machine integer.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct FractionComponent(String);
 
 impl FractionComponent {
     /// Validates a positive decimal integer of at most 30 digits.
     pub fn new(value: impl Into<String>) -> Result<Self> {
         let value = value.into();
-        if value.is_empty()
-            || value.len() > 30
-            || !value.bytes().all(|byte| byte.is_ascii_digit())
-            || value.bytes().all(|byte| byte == b'0')
-        {
+        let Some(digits) = positive_integer_digits(&value) else {
+            return Err(Error::invalid_input(
+                "fraction_component",
+                "expected a positive decimal integer with at most 30 digits",
+            ));
+        };
+        if digits.len() > 30 {
             return Err(Error::invalid_input(
                 "fraction_component",
                 "expected a positive decimal integer with at most 30 digits",
@@ -155,6 +148,17 @@ impl FromStr for FractionComponent {
 
     fn from_str(value: &str) -> Result<Self> {
         Self::new(value)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for FractionComponent {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -570,7 +574,7 @@ pub struct BuildingRight {
 }
 
 /// Fields common to a primary authorized subject and each partner.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SubjectBase {
     /// Internal authorized-subject ID.
     pub id: SubjectId,
@@ -618,8 +622,14 @@ pub struct SubjectBase {
     pub characteristic_code: Option<String>,
 }
 
+impl fmt::Debug for SubjectBase {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SubjectBase([REDACTED])")
+    }
+}
+
 /// An authorized subject, including either optional partner (`OSType`).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct AuthorizedSubject {
     /// Fields common to every subject form.
     pub base: SubjectBase,
@@ -627,6 +637,12 @@ pub struct AuthorizedSubject {
     pub partner1: Option<SubjectBase>,
     /// Second partner for joint-property subjects.
     pub partner2: Option<SubjectBase>,
+}
+
+impl fmt::Debug for AuthorizedSubject {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AuthorizedSubject([REDACTED])")
+    }
 }
 
 /// A cadastral proceeding (`RizeniType`).
@@ -732,6 +748,12 @@ pub struct ParcelSearchKey {
     pub number: ParcelNumber,
 }
 
+impl ParcelSearchKey {
+    pub(crate) fn validate(&self) -> Result<()> {
+        self.number.validate()
+    }
+}
+
 /// `najdiParcelu` request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParcelSearch {
@@ -739,6 +761,19 @@ pub struct ParcelSearch {
     pub selector: ParcelSearchSelector,
     /// Historical timestamp; `None` requests current server data.
     pub valid_at: Option<XmlDateTime>,
+}
+
+impl ParcelSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_parcel_selector(&self.selector)
+    }
+}
+
+fn validate_parcel_selector(selector: &ParcelSearchSelector) -> Result<()> {
+    match selector {
+        ParcelSearchSelector::Id(_) => Ok(()),
+        ParcelSearchSelector::Number(key) => key.validate(),
+    }
 }
 
 /// Building lookup by internal ID or natural key.
@@ -768,17 +803,23 @@ impl BuildingSearchKey {
         building_type: BuildingTypeCode,
         house_number: u16,
     ) -> Result<Self> {
-        if !(1..=9999).contains(&house_number) {
+        let value = Self {
+            municipality_part,
+            building_type,
+            house_number,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(1..=9999).contains(&self.house_number) {
             return Err(Error::invalid_input(
                 "house_number",
                 "house number must be in 1..=9999",
             ));
         }
-        Ok(Self {
-            municipality_part,
-            building_type,
-            house_number,
-        })
+        Ok(())
     }
 }
 
@@ -789,6 +830,19 @@ pub struct BuildingSearch {
     pub selector: BuildingSearchSelector,
     /// Historical timestamp; `None` requests current server data.
     pub valid_at: Option<XmlDateTime>,
+}
+
+impl BuildingSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_building_selector(&self.selector)
+    }
+}
+
+fn validate_building_selector(selector: &BuildingSearchSelector) -> Result<()> {
+    match selector {
+        BuildingSearchSelector::Id(_) => Ok(()),
+        BuildingSearchSelector::Number(key) => key.validate(),
+    }
 }
 
 /// Unit lookup by ID or by building and optional unit number.
@@ -812,13 +866,20 @@ pub struct UnitSearchKey {
 impl UnitSearchKey {
     /// Validates the optional unit-number range from `CisloJednotkyType`.
     pub fn new(building: BuildingSearchSelector, number: Option<u64>) -> Result<Self> {
-        if number.is_some_and(|value| value > 9_999_999_999) {
+        let value = Self { building, number };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_building_selector(&self.building)?;
+        if self.number.is_some_and(|value| value > 9_999_999_999) {
             return Err(Error::invalid_input(
                 "unit_number",
                 "unit number must be at most 9999999999",
             ));
         }
-        Ok(Self { building, number })
+        Ok(())
     }
 }
 
@@ -829,6 +890,15 @@ pub struct UnitSearch {
     pub selector: UnitSearchSelector,
     /// Historical timestamp; `None` requests current server data.
     pub valid_at: Option<XmlDateTime>,
+}
+
+impl UnitSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match &self.selector {
+            UnitSearchSelector::Id(_) => Ok(()),
+            UnitSearchSelector::Number(key) => key.validate(),
+        }
+    }
 }
 
 /// Building-right lookup by its own ID or by a parcel selector.
@@ -847,6 +917,15 @@ pub struct BuildingRightSearch {
     pub selector: BuildingRightSelector,
     /// Historical timestamp; `None` requests current server data.
     pub valid_at: Option<XmlDateTime>,
+}
+
+impl BuildingRightSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match &self.selector {
+            BuildingRightSelector::Id(_) => Ok(()),
+            BuildingRightSelector::Parcel(selector) => validate_parcel_selector(selector),
+        }
+    }
 }
 
 /// A proceeding natural key.
@@ -870,31 +949,36 @@ impl ProceedingSearchKey {
         year: u16,
         workplace: WorkplaceCode,
     ) -> Result<Self> {
-        let proceeding_type = proceeding_type.into();
-        if !(1..=3).contains(&proceeding_type.chars().count()) {
+        let value = Self {
+            proceeding_type: proceeding_type.into(),
+            serial_number,
+            year,
+            workplace,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(1..=3).contains(&self.proceeding_type.chars().count()) {
             return Err(Error::invalid_input(
                 "proceeding_type",
                 "proceeding type must contain 1 to 3 characters",
             ));
         }
-        if !(1..=99_999_999).contains(&serial_number) {
+        if !(1..=99_999_999).contains(&self.serial_number) {
             return Err(Error::invalid_input(
                 "serial_number",
                 "proceeding serial number must be in 1..=99999999",
             ));
         }
-        if !(1..=9999).contains(&year) {
+        if !(1..=9999).contains(&self.year) {
             return Err(Error::invalid_input(
                 "year",
                 "proceeding year must be in 1..=9999",
             ));
         }
-        Ok(Self {
-            proceeding_type,
-            serial_number,
-            year,
-            workplace,
-        })
+        Ok(())
     }
 }
 
@@ -914,11 +998,30 @@ pub struct ProceedingSearch {
     pub selector: ProceedingSearchSelector,
 }
 
+impl ProceedingSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_proceeding_selector(&self.selector)
+    }
+}
+
+fn validate_proceeding_selector(selector: &ProceedingSearchSelector) -> Result<()> {
+    match selector {
+        ProceedingSearchSelector::Id(_) => Ok(()),
+        ProceedingSearchSelector::Number(key) => key.validate(),
+    }
+}
+
 /// `najdiListinuVeSbirceListin` request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CollectionDocumentSearch {
     /// Proceeding ID/natural-key choice.
     pub proceeding: ProceedingSearchSelector,
+}
+
+impl CollectionDocumentSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_proceeding_selector(&self.proceeding)
+    }
 }
 
 /// `najdiGP` request.
@@ -933,21 +1036,27 @@ pub struct GeometricPlanSearch {
 impl GeometricPlanSearch {
     /// Validates the signed survey-result number.
     pub fn new(cadastral_area: CadastralAreaCode, survey_result_number: i32) -> Result<Self> {
-        if !(-99_999..=99_999).contains(&survey_result_number) {
+        let value = Self {
+            cadastral_area,
+            survey_result_number,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(-99_999..=99_999).contains(&self.survey_result_number) {
             return Err(Error::invalid_input(
                 "survey_result_number",
                 "survey-result number must be in -99999..=99999",
             ));
         }
-        Ok(Self {
-            cadastral_area,
-            survey_result_number,
-        })
+        Ok(())
     }
 }
 
 /// Legal-person subject search. At least one of company ID and name is required.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct LegalPersonSearch {
     /// Company identification number.
     pub company_id: Option<CompanyId>,
@@ -958,13 +1067,20 @@ pub struct LegalPersonSearch {
 impl LegalPersonSearch {
     /// Validates the mandatory-at-least-one rule and search-name length.
     pub fn new(company_id: Option<CompanyId>, name: Option<String>) -> Result<Self> {
-        if company_id.is_none() && name.is_none() {
+        let value = Self { company_id, name };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.company_id.is_none() && self.name.is_none() {
             return Err(Error::invalid_input(
                 "legal_person",
                 "company ID or name is required",
             ));
         }
-        if name
+        if self
+            .name
             .as_deref()
             .is_some_and(|value| !(2..=255).contains(&value.chars().count()))
         {
@@ -973,12 +1089,25 @@ impl LegalPersonSearch {
                 "legal-person search name must contain 2 to 255 characters",
             ));
         }
-        Ok(Self { company_id, name })
+        Ok(())
+    }
+}
+
+impl fmt::Debug for LegalPersonSearch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LegalPersonSearch")
+            .field(
+                "company_id",
+                &self.company_id.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("name", &self.name.as_ref().map(|_| "[REDACTED]"))
+            .finish()
     }
 }
 
 /// Personal identifier or birth-date choice for natural-person/partnership search.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum PersonBirthSelector {
     /// Full personal identifier; debug output is redacted by its type.
     PersonalIdentifier(PersonalIdentifier),
@@ -986,8 +1115,17 @@ pub enum PersonBirthSelector {
     BirthDate(XmlDate),
 }
 
+impl fmt::Debug for PersonBirthSelector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::PersonalIdentifier(_) => "PersonalIdentifier([REDACTED])",
+            Self::BirthDate(_) => "BirthDate([REDACTED])",
+        })
+    }
+}
+
 /// Address filters available for natural-person and partnership lookup.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct SubjectAddressFilter {
     /// Municipality name.
     pub municipality: Option<String>,
@@ -1001,8 +1139,74 @@ pub struct SubjectAddressFilter {
     pub house_number: Option<u16>,
 }
 
+impl SubjectAddressFilter {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_optional_length(self.municipality.as_deref(), "municipality", 1, 48)?;
+        validate_optional_length(
+            self.municipality_part.as_deref(),
+            "municipality_part",
+            1,
+            48,
+        )?;
+        validate_optional_length(self.street.as_deref(), "street", 1, 48)?;
+        validate_optional_length(
+            self.orientation_number.as_deref(),
+            "orientation_number",
+            1,
+            4,
+        )?;
+        if self
+            .house_number
+            .is_some_and(|value| !(1..=9999).contains(&value))
+        {
+            return Err(Error::invalid_input(
+                "house_number",
+                "house number must be in 1..=9999",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for SubjectAddressFilter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SubjectAddressFilter")
+            .field(
+                "municipality",
+                &self.municipality.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "municipality_part",
+                &self.municipality_part.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("street", &self.street.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "orientation_number",
+                &self.orientation_number.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("house_number", &self.house_number.map(|_| "[REDACTED]"))
+            .finish()
+    }
+}
+
+fn validate_optional_length(
+    value: Option<&str>,
+    field: &'static str,
+    minimum: usize,
+    maximum: usize,
+) -> Result<()> {
+    if value.is_some_and(|value| !(minimum..=maximum).contains(&value.chars().count())) {
+        return Err(Error::invalid_input(
+            field,
+            format!("value must contain {minimum} to {maximum} characters"),
+        ));
+    }
+    Ok(())
+}
+
 /// Natural-person or marital/partner joint-property subject search.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct PersonOrPartnershipSearch {
     /// Given name, with server-defined matching semantics.
     pub given_name: Option<String>,
@@ -1014,8 +1218,34 @@ pub struct PersonOrPartnershipSearch {
     pub address: Option<SubjectAddressFilter>,
 }
 
+impl PersonOrPartnershipSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_optional_length(self.given_name.as_deref(), "given_name", 2, 100)?;
+        validate_optional_length(self.surname.as_deref(), "surname", 2, 100)?;
+        if let Some(address) = &self.address {
+            address.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for PersonOrPartnershipSearch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PersonOrPartnershipSearch")
+            .field(
+                "given_name",
+                &self.given_name.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("surname", &self.surname.as_ref().map(|_| "[REDACTED]"))
+            .field("birth", &self.birth)
+            .field("address", &self.address)
+            .finish()
+    }
+}
+
 /// Legal-person versus natural-person/partnership subject-search choice.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum SubjectSearchSelector {
     /// Search by IČO and/or legal-person name.
     LegalPerson(LegalPersonSearch),
@@ -1023,8 +1253,22 @@ pub enum SubjectSearchSelector {
     PersonOrPartnership(PersonOrPartnershipSearch),
 }
 
+impl fmt::Debug for SubjectSearchSelector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LegalPerson(search) => {
+                formatter.debug_tuple("LegalPerson").field(search).finish()
+            }
+            Self::PersonOrPartnership(search) => formatter
+                .debug_tuple("PersonOrPartnership")
+                .field(search)
+                .finish(),
+        }
+    }
+}
+
 /// `najdiOS` request.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct SubjectSearch {
     /// Subject-form choice.
     pub selector: SubjectSearchSelector,
@@ -1032,8 +1276,27 @@ pub struct SubjectSearch {
     pub valid_at: Option<XmlDateTime>,
 }
 
+impl SubjectSearch {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match &self.selector {
+            SubjectSearchSelector::LegalPerson(search) => search.validate(),
+            SubjectSearchSelector::PersonOrPartnership(search) => search.validate(),
+        }
+    }
+}
+
+impl fmt::Debug for SubjectSearch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SubjectSearch")
+            .field("selector", &self.selector)
+            .field("valid_at", &self.valid_at)
+            .finish()
+    }
+}
+
 /// One of the eight WSDP 3.1 `vyhledat` requests.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum SearchRequest {
     /// `najdiParcelu`.
     Parcel(ParcelSearch),
@@ -1051,6 +1314,47 @@ pub enum SearchRequest {
     CollectionDocument(CollectionDocumentSearch),
     /// `najdiGP`.
     GeometricPlan(GeometricPlanSearch),
+}
+
+impl SearchRequest {
+    pub(crate) fn validate(&self) -> Result<()> {
+        match self {
+            Self::Parcel(request) => request.validate(),
+            Self::Unit(request) => request.validate(),
+            Self::Building(request) => request.validate(),
+            Self::Subject(request) => request.validate(),
+            Self::BuildingRight(request) => request.validate(),
+            Self::Proceeding(request) => request.validate(),
+            Self::CollectionDocument(request) => request.validate(),
+            Self::GeometricPlan(request) => request.validate(),
+        }
+    }
+}
+
+impl fmt::Debug for SearchRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Parcel(request) => formatter.debug_tuple("Parcel").field(request).finish(),
+            Self::Unit(request) => formatter.debug_tuple("Unit").field(request).finish(),
+            Self::Building(request) => formatter.debug_tuple("Building").field(request).finish(),
+            Self::Subject(request) => formatter.debug_tuple("Subject").field(request).finish(),
+            Self::BuildingRight(request) => formatter
+                .debug_tuple("BuildingRight")
+                .field(request)
+                .finish(),
+            Self::Proceeding(request) => {
+                formatter.debug_tuple("Proceeding").field(request).finish()
+            }
+            Self::CollectionDocument(request) => formatter
+                .debug_tuple("CollectionDocument")
+                .field(request)
+                .finish(),
+            Self::GeometricPlan(request) => formatter
+                .debug_tuple("GeometricPlan")
+                .field(request)
+                .finish(),
+        }
+    }
 }
 
 /// Whether a search result is complete, empty, or truncated by the service limit.
@@ -1147,18 +1451,35 @@ mod tests {
 
     #[test]
     fn xml_date_retains_naive_and_offset_forms() {
-        for raw in ["2026-11-20", "2026-11-20Z", "2026-11-20+01:00"] {
+        for raw in [
+            "2026-11-20",
+            "2026-11-20Z",
+            "2026-11-20+01:00",
+            "2024-02-29-14:00",
+            " \t2026-11-20+14:00\r\n",
+            "-0001-01-01Z",
+            "10000-01-01",
+        ] {
             assert_eq!(XmlDate::new(raw).unwrap().as_str(), raw);
         }
-        assert!(XmlDate::new("20.11.2026").is_err());
-        assert!(XmlDate::new("2026-11-20+15:00").is_err());
+        for raw in [
+            "20.11.2026",
+            "2026-02-29",
+            "2026-11-20z",
+            "2026-11-20+14:01",
+            "2026-11-20+15:00",
+            "2026-11-20+01:00:01",
+            "0000-01-01",
+        ] {
+            assert!(XmlDate::new(raw).is_err(), "{raw}");
+        }
     }
 
     #[test]
     fn completion_uses_limit_and_no_data_messages() {
         let mut result = SearchResult::from_items(vec![1]);
         result.refine_completion(&[ServiceMessage {
-            code: MessageCode::ResultLimitExceeded,
+            code: MessageCode::from_raw(" \t+000310\r\n"),
             level: MessageLevel::Warning,
             text: String::new(),
         }]);
@@ -1168,6 +1489,158 @@ mod tests {
         result.items.clear();
         result.refine_completion(&[]);
         assert_eq!(result.completion, SearchCompletion::Empty);
+    }
+
+    #[test]
+    fn integer_lexical_forms_are_preserved_while_digit_limits_and_ranges_hold() {
+        let building = BuildingTypeCode::new(" \t+0009\r\n").unwrap();
+        assert_eq!(building.as_str(), " \t+0009\r\n");
+        assert!(BuildingTypeCode::new("+10").is_err());
+        assert!(BuildingTypeCode::new(" +0 ").is_err());
+        assert!(BuildingTypeCode::new("++1").is_err());
+
+        let raw = "123456789012345678901234567890";
+        let fraction = FractionComponent::new(format!(" \t+{raw}\r\n")).unwrap();
+        assert_eq!(fraction.as_str(), " \t+123456789012345678901234567890\r\n");
+        assert!(FractionComponent::new(" +1234567890123456789012345678901 ").is_err());
+        assert!(FractionComponent::new("+000").is_err());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn search_integer_deserialization_uses_validating_constructors() {
+        let code: BuildingTypeCode = serde_json::from_str("\" +0009 \"").unwrap();
+        assert_eq!(code.as_str(), " +0009 ");
+        assert!(serde_json::from_str::<BuildingTypeCode>("\"10\"").is_err());
+        let component: FractionComponent = serde_json::from_str("\" +0001 \"").unwrap();
+        assert_eq!(component.as_str(), " +0001 ");
+        assert!(serde_json::from_str::<FractionComponent>("\"0\"").is_err());
+    }
+
+    #[test]
+    fn directly_constructed_request_fields_recheck_all_constructor_invariants() {
+        assert!(
+            ParcelNumber {
+                root: 100_000,
+                subdivision: None,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            ParcelNumber {
+                root: 1,
+                subdivision: Some(0),
+            }
+            .validate()
+            .is_err()
+        );
+        let building = BuildingSearchKey {
+            municipality_part: MunicipalityPartCode::new("1").unwrap(),
+            building_type: BuildingTypeCode::new("1").unwrap(),
+            house_number: 0,
+        };
+        assert!(building.validate().is_err());
+        let unit = UnitSearchKey {
+            building: BuildingSearchSelector::Number(building),
+            number: Some(10_000_000_000),
+        };
+        assert!(unit.validate().is_err());
+        let proceeding = ProceedingSearchKey {
+            proceeding_type: String::new(),
+            serial_number: 0,
+            year: 10_000,
+            workplace: WorkplaceCode::new("1").unwrap(),
+        };
+        assert!(proceeding.validate().is_err());
+        assert!(
+            GeometricPlanSearch {
+                cadastral_area: CadastralAreaCode::new("1").unwrap(),
+                survey_result_number: 100_000,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            LegalPersonSearch {
+                company_id: None,
+                name: None,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            LegalPersonSearch {
+                company_id: None,
+                name: Some("x".to_owned()),
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PersonOrPartnershipSearch {
+                given_name: Some("J".to_owned()),
+                surname: None,
+                birth: None,
+                address: Some(SubjectAddressFilter {
+                    house_number: Some(0),
+                    ..SubjectAddressFilter::default()
+                }),
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn sensitive_subject_queries_are_redacted_at_every_debug_layer() {
+        let person = PersonOrPartnershipSearch {
+            given_name: Some("given-secret".to_owned()),
+            surname: Some("surname-secret".to_owned()),
+            birth: Some(PersonBirthSelector::BirthDate(
+                XmlDate::new("2001-02-03").unwrap(),
+            )),
+            address: Some(SubjectAddressFilter {
+                municipality: Some("municipality-secret".to_owned()),
+                municipality_part: Some("part-secret".to_owned()),
+                street: Some("street-secret".to_owned()),
+                orientation_number: Some("77A".to_owned()),
+                house_number: Some(13_579),
+            }),
+        };
+        let selector = SubjectSearchSelector::PersonOrPartnership(person.clone());
+        let subject = SubjectSearch {
+            selector: selector.clone(),
+            valid_at: None,
+        };
+        let request = SearchRequest::Subject(subject.clone());
+        let debug = format!("{person:?} {selector:?} {subject:?} {request:?}");
+        for sentinel in [
+            "given-secret",
+            "surname-secret",
+            "2001-02-03",
+            "municipality-secret",
+            "part-secret",
+            "street-secret",
+            "77A",
+            "13579",
+        ] {
+            assert!(!debug.contains(sentinel), "{debug}");
+        }
+
+        let legal = LegalPersonSearch::new(
+            Some(CompanyId::new("12345678").unwrap()),
+            Some("legal-secret".to_owned()),
+        )
+        .unwrap();
+        let subject = SubjectSearch {
+            selector: SubjectSearchSelector::LegalPerson(legal.clone()),
+            valid_at: None,
+        };
+        let request = SearchRequest::Subject(subject.clone());
+        let debug = format!("{legal:?} {subject:?} {request:?}");
+        assert!(!debug.contains("legal-secret"));
+        assert!(!debug.contains("12345678"));
     }
 
     #[test]

@@ -1,3 +1,5 @@
+mod reports;
+
 use std::fmt;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -429,6 +431,7 @@ impl Client {
             Err(error @ Error::Service(_)) | Err(error @ Error::Authentication { .. }) => {
                 Err(error)
             }
+            Err(error) if error.is_authentication_failure() => Err(error),
             Err(error @ Error::Transport(_)) if matches!(&error, Error::Transport(source) if source.is_connect()) => {
                 Err(error)
             }
@@ -449,12 +452,17 @@ impl Client {
     /// This free operation never downloads report content and performs no hidden
     /// pagination or follow-up request.
     pub async fn list_reports(&self, id: Option<&ReportId>) -> Result<Response<ReportBatch>> {
-        self.execute(
-            &report::list_operation(),
-            |writer| report::write_list(writer, id),
-            report::decode_report_batch,
-        )
-        .await
+        let result = self
+            .execute(
+                &report::list_operation(),
+                |writer| report::write_list(writer, id),
+                report::decode_report_batch,
+            )
+            .await;
+        match id {
+            Some(id) => result.map_err(|source| report_failure(id, ReportStage::Status, source)),
+            None => result,
+        }
     }
 
     /// Refreshes metadata for one report without downloading it.
@@ -502,18 +510,36 @@ impl Client {
             ));
         }
         let started = tokio::time::Instant::now();
-        let deadline = started + options.max_wait;
-        let mut next_poll = started + options.initial_delay;
+        let deadline = started.checked_add(options.max_wait).ok_or_else(|| {
+            report_failure(
+                id,
+                ReportStage::Wait,
+                Error::invalid_input("max_wait", "maximum wait exceeds the timer range"),
+            )
+        })?;
+        let mut next_poll = started.checked_add(options.initial_delay).ok_or_else(|| {
+            report_failure(
+                id,
+                ReportStage::Wait,
+                Error::invalid_input("initial_delay", "initial delay exceeds the timer range"),
+            )
+        })?;
         let mut interval = options.poll_interval;
         loop {
             if next_poll >= deadline {
                 return Err(Error::ReportWaitTimeout { id: id.clone() });
             }
             tokio::time::sleep_until(next_poll).await;
-            let response = self
-                .refresh_report(id)
-                .await
-                .map_err(|source| report_failure(id, ReportStage::Wait, source))?;
+            let response = tokio::time::timeout_at(deadline, self.refresh_report(id)).await;
+            if tokio::time::Instant::now() >= deadline {
+                return Err(Error::ReportWaitTimeout { id: id.clone() });
+            }
+            let response = match response {
+                Ok(result) => {
+                    result.map_err(|source| report_failure(id, ReportStage::Wait, source))?
+                }
+                Err(_) => return Err(Error::ReportWaitTimeout { id: id.clone() }),
+            };
             if response.value.state.is_ready() {
                 return Ok(response);
             }
@@ -527,7 +553,13 @@ impl Client {
             if let Some(cap) = options.max_poll_interval {
                 interval = interval.saturating_mul(2).min(cap);
             }
-            next_poll = now + interval;
+            next_poll = now.checked_add(interval).ok_or_else(|| {
+                report_failure(
+                    id,
+                    ReportStage::Wait,
+                    Error::invalid_input("poll_interval", "poll interval exceeds the timer range"),
+                )
+            })?;
         }
     }
 
@@ -714,6 +746,7 @@ impl Client {
             Err(error @ Error::Service(_)) | Err(error @ Error::Authentication { .. }) => {
                 Err(error)
             }
+            Err(error) if error.is_authentication_failure() => Err(error),
             Err(error @ Error::Transport(_)) if matches!(&error, Error::Transport(source) if source.is_connect()) => {
                 Err(error)
             }
@@ -992,7 +1025,9 @@ fn optional_text(
         return Ok(None);
     };
     if soap::is_nil(element) {
-        return Ok(None);
+        return Err(Error::invalid_response(format!(
+            "optional non-nillable XML element {name} is nil"
+        )));
     }
     soap::simple_content(element, name).map(Some)
 }
@@ -1058,6 +1093,56 @@ mod tests {
             let state = if call == 0 { "čeká" } else { "zpracován" };
             ResponseTemplate::new(200).set_body_string(report_response("123", state))
         }
+    }
+
+    struct DownloadFlow {
+        preflight: String,
+        download: ResponseTemplate,
+    }
+
+    impl wiremock::Respond for DownloadFlow {
+        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+            if String::from_utf8_lossy(&request.body).contains("VratSestavuRequest") {
+                self.download.clone()
+            } else {
+                ResponseTemplate::new(200).set_body_string(self.preflight.clone())
+            }
+        }
+    }
+
+    async fn download_failure(response: ResponseTemplate) -> Error {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(DownloadFlow {
+                preflight: report_response("123", "zpracován"),
+                download: response,
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        Client::test_client(server.uri())
+            .download_report(&ReportId::new("123").unwrap(), ChargeApproval::FreeOnly)
+            .await
+            .unwrap_err()
+    }
+
+    fn parcel_generation_request() -> GenerateReport {
+        GenerateReport::ParcelInfo(crate::ParcelInfoRequest::new(
+            crate::ParcelSelector::Id(crate::ParcelId::new("123").unwrap()),
+            crate::ReportOptions::xml_default(crate::AccountContext::Paying),
+        ))
+    }
+
+    fn multi_report_response() -> String {
+        let first = report_response("123", "čeká");
+        let second = report_response("456", "čeká");
+        let start = second.find("<report>").unwrap();
+        let end = second.find("</report>").unwrap() + "</report>".len();
+        first.replace(
+            "</reportList>",
+            &format!("{}</reportList>", &second[start..end]),
+        )
     }
 
     #[tokio::test]
@@ -1150,6 +1235,25 @@ mod tests {
             Error::ReportOperation { source, .. }
                 if matches!(*source, Error::InvalidResponse { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn report_status_accepts_xml_padded_correlation_ids() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(report_response(" \t123\r\n", "zpracován")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let response = Client::test_client(server.uri())
+            .report_status(&ReportId::new("123").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.value.id.as_str(), "123");
     }
 
     #[tokio::test]
@@ -1317,6 +1421,376 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_generation_is_uncertain_and_never_retried() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not XML"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let error = Client::test_client(server.uri())
+            .generate_report(parcel_generation_request())
+            .await
+            .unwrap_err();
+        assert!(error.submission_outcome_uncertain());
+    }
+
+    #[tokio::test]
+    async fn http_mtom_and_correlation_download_failures_are_uncertain_once() {
+        for response in [
+            ResponseTemplate::new(500),
+            ResponseTemplate::new(200)
+                .set_body_raw("truncated multipart", "multipart/related; boundary=missing"),
+            ResponseTemplate::new(200)
+                .set_body_raw(download_response("999", b"payload"), "text/xml"),
+        ] {
+            let error = download_failure(response).await;
+            assert!(error.charge_outcome_uncertain());
+            assert_eq!(error.report_id().unwrap().as_str(), "123");
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_dispatched_download_is_uncertain_once() {
+        let server = MockServer::start().await;
+        let payload = vec![b'x'; 8192];
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(DownloadFlow {
+                preflight: report_response("123", "zpracován"),
+                download: ResponseTemplate::new(200)
+                    .set_body_raw(download_response("123", &payload), "text/xml"),
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = ClientBuilder {
+            test_base_url: Some(server.uri()),
+            ..Client::builder(Environment::Trial)
+        }
+        .credentials(Credentials::new("test-user", "sentinel-password"))
+        .max_response_bytes(2048)
+        .build()
+        .unwrap();
+        let error = client
+            .download_report(&ReportId::new("123").unwrap(), ChargeApproval::FreeOnly)
+            .await
+            .unwrap_err();
+        assert!(error.charge_outcome_uncertain());
+        assert!(matches!(
+            error,
+            Error::ChargeUncertain { source, .. }
+                if matches!(*source, Error::ResponseTooLarge { limit: 2048 })
+        ));
+    }
+
+    #[tokio::test]
+    async fn missing_price_and_non_ready_state_prevent_download_dispatch() {
+        for (preflight, price_missing) in [
+            (report_response("123", "čeká"), false),
+            (
+                report_response("123", "zpracován").replace("<cena>0</cena>", ""),
+                true,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/sestavy"))
+                .respond_with(DownloadFlow {
+                    preflight,
+                    download: ResponseTemplate::new(500),
+                })
+                .expect(1)
+                .mount(&server)
+                .await;
+            let id = ReportId::new("123").unwrap();
+            let error = Client::test_client(server.uri())
+                .download_report(&id, ChargeApproval::Any)
+                .await
+                .unwrap_err();
+            assert_eq!(error.report_id(), Some(&id));
+            assert!(!error.charge_outcome_uncertain());
+            if price_missing {
+                assert!(matches!(error, Error::ReportPriceUnavailable { .. }));
+            } else {
+                assert!(matches!(error, Error::ReportUnavailable { .. }));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn exact_limit_allows_an_already_charged_report_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(DownloadFlow {
+                preflight: priced_report_response("123", "zaúčtován", "10.00"),
+                download: ResponseTemplate::new(200)
+                    .set_body_raw(download_response("123", b"paid"), "text/xml"),
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let report = Client::test_client(server.uri())
+            .download_report(
+                &ReportId::new("123").unwrap(),
+                ChargeApproval::up_to("10.00".parse().unwrap()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(report.bytes.as_ref(), b"paid");
+    }
+
+    #[tokio::test]
+    async fn wait_deadline_bounds_an_in_flight_status_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(report_response("123", "zpracován"))
+                    .set_delay(Duration::from_millis(100)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let id = ReportId::new("123").unwrap();
+        let error = Client::test_client(server.uri())
+            .wait_for_report(
+                &id,
+                WaitOptions {
+                    initial_delay: Duration::ZERO,
+                    poll_interval: Duration::from_millis(1),
+                    max_wait: Duration::from_millis(20),
+                    max_poll_interval: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::ReportWaitTimeout { .. }));
+        assert_eq!(error.report_id(), Some(&id));
+    }
+
+    #[tokio::test]
+    async fn unexpected_typed_batch_retains_all_ids_without_followup_requests() {
+        use crate::{
+            AccountContext, CadastralAreaCode, DefinitionPointsRequest, DefinitionPointsSelector,
+            ReportOptions,
+        };
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(multi_report_response()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let error = Client::test_client(server.uri())
+            .definition_points_report(
+                DefinitionPointsRequest::new(
+                    DefinitionPointsSelector::CadastralArea(
+                        CadastralAreaCode::new("693936").unwrap(),
+                    ),
+                    ReportOptions::xml_default(AccountContext::Paying),
+                ),
+                WaitOptions::default(),
+                ChargeApproval::Any,
+            )
+            .await
+            .unwrap_err();
+        let ids = error.report_ids().unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0].as_str(), "123");
+        assert_eq!(ids[1].as_str(), "456");
+    }
+
+    #[tokio::test]
+    async fn verifying_account_statement_xml_is_rejected_without_requests() {
+        use crate::{AccountKind, AccountStatementRequest};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let request = AccountStatementRequest::new(
+            XmlDateTime::new("2026-01-01T00:00:00Z").unwrap(),
+            crate::OutputFormat::Xml,
+        )
+        .with_account(AccountKind::Verifying);
+        let error = Client::test_client(server.uri())
+            .generate_report(GenerateReport::AccountStatement(request))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput {
+                field: "format",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn typed_helpers_reject_latest_before_generation() {
+        use crate::{AccountContext, ParcelId, ParcelInfoRequest, ParcelSelector, ReportOptions};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let request = ParcelInfoRequest::new(
+            ParcelSelector::Id(ParcelId::new("123").unwrap()),
+            ReportOptions::xml_latest(AccountContext::Paying),
+        );
+        let error = client
+            .parcel_info_report(request, WaitOptions::default(), ChargeApproval::Any)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::InvalidInput {
+                field: "version",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn typed_definition_points_workflow_preserves_original_xml() {
+        use crate::{
+            AccountContext, CadastralAreaCode, DefinitionPointsRequest, DefinitionPointsSelector,
+            ReportOptions,
+        };
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("GenerujInfoOBodechRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "čeká")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("SeznamSestavRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "zpracován")),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let xml = "<SeznamDefinicnichBoduParcel><LIST_G_SOURADNICE></LIST_G_SOURADNICE><PLATNOST>now</PLATNOST><VYHOTOVIL>test</VYHOTOVIL><BEZPL_PRISTUP>free</BEZPL_PRISTUP><VYHOTOVENO>later</VYHOTOVENO></SeznamDefinicnichBoduParcel>";
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("VratSestavuRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(download_response("123", xml.as_bytes()), "text/xml"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let report = client
+            .definition_points_report(
+                DefinitionPointsRequest::new(
+                    DefinitionPointsSelector::CadastralArea(
+                        CadastralAreaCode::new("693936").unwrap(),
+                    ),
+                    ReportOptions::xml_default(AccountContext::Paying),
+                ),
+                WaitOptions {
+                    initial_delay: Duration::from_millis(1),
+                    poll_interval: Duration::from_millis(1),
+                    max_wait: Duration::from_secs(1),
+                    max_poll_interval: None,
+                },
+                ChargeApproval::FreeOnly,
+            )
+            .await
+            .unwrap();
+        assert!(report.value.points.is_empty());
+        assert_eq!(report.original_xml().as_ref(), xml.as_bytes());
+        assert!(!format!("{report:?}").contains("SeznamDefinicnichBoduParcel"));
+    }
+
+    #[tokio::test]
+    async fn binary_workflow_returns_pdf_without_parsing_or_leaking_bytes() {
+        use crate::{AccountContext, CollectionDocumentRequest, DocumentId};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body)
+                    .contains("GenerujVystupZeSbirkyListinRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "čeká")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("SeznamSestavRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "zpracován")),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let payload = b"%PDF-1.7\n\x00sensitive-pdf";
+        let response = download_response("123", payload)
+            .replace("<format>xml</format>", "<format>pdf</format>");
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("VratSestavuRequest")
+            })
+            .respond_with(ResponseTemplate::new(200).set_body_raw(response, "text/xml"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let report = client
+            .collection_document_report(
+                CollectionDocumentRequest::new(
+                    DocumentId::new("123").unwrap(),
+                    AccountContext::Paying,
+                ),
+                WaitOptions {
+                    initial_delay: Duration::from_millis(1),
+                    poll_interval: Duration::from_millis(1),
+                    max_wait: Duration::from_secs(1),
+                    max_poll_interval: None,
+                },
+                ChargeApproval::FreeOnly,
+            )
+            .await
+            .unwrap();
+        assert_eq!(report.as_bytes().as_ref(), payload);
+        assert_eq!(report.metadata.format, crate::ReportFormat::Pdf);
+        assert!(!format!("{report:?}").contains("sensitive-pdf"));
+    }
+
+    #[tokio::test]
     async fn confirmed_password_change_updates_all_clones() {
         use secrecy::ExposeSecret as _;
 
@@ -1361,6 +1835,66 @@ mod tests {
         ));
         clone.replace_credentials(Credentials::new("confirmed", "confirmed-password"));
         assert!(!clone.inner.credentials.read().unwrap().replacement_required);
+    }
+
+    #[tokio::test]
+    async fn definitive_wsse_password_rejection_preserves_old_credentials() {
+        use secrecy::ExposeSecret as _;
+
+        for fault_code in [
+            "wsse:InvalidSecurity",
+            "wsse:FailedAuthentication",
+            " \twsse:FailedAuthentication\r\n",
+        ] {
+            let server = MockServer::start().await;
+            let fault = format!(
+                r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>{fault_code}</faultcode><faultstring>private authentication detail</faultstring></soap:Fault></soap:Body></soap:Envelope>"#
+            );
+            Mock::given(method("POST"))
+                .and(path("/ucet"))
+                .and(|request: &wiremock::Request| {
+                    String::from_utf8_lossy(&request.body).contains("ZmenHesloRequest")
+                })
+                .respond_with(ResponseTemplate::new(500).set_body_string(fault))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let status = status_response().replace(
+                "urn:cz:gov:cuzk:iskn:types:wsdp:ciselnik:3.1",
+                "urn:cz:gov:cuzk:iskn:types:wsdp:ucet:3.1",
+            );
+            Mock::given(method("POST"))
+                .and(path("/ucet"))
+                .and(|request: &wiremock::Request| {
+                    let body = String::from_utf8_lossy(&request.body);
+                    body.contains("StavWSRequest")
+                        && body.contains("sentinel-password")
+                        && !body.contains("new-sentinel")
+                })
+                .respond_with(ResponseTemplate::new(200).set_body_string(status))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let client = Client::test_client(server.uri());
+            let clone = client.clone();
+            let error = client
+                .change_password(NewPassword::new("new-sentinel").unwrap())
+                .await
+                .unwrap_err();
+            assert!(error.is_authentication_failure());
+            assert!(!error.password_change_outcome_uncertain());
+            assert!(!format!("{error:?}").contains("private authentication detail"));
+            {
+                let state = clone.inner.credentials.read().unwrap();
+                assert_eq!(
+                    state.credentials.password.expose_secret(),
+                    "sentinel-password"
+                );
+                assert!(!state.replacement_required);
+            }
+            clone.service_status(ServiceKind::Account).await.unwrap();
+        }
     }
 
     #[tokio::test]

@@ -218,8 +218,20 @@ impl OutputFormat {
     }
 }
 
+/// Broad WSDP account kind, used where only format restrictions apply.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum AccountKind {
+    /// Ordinary paying account.
+    #[default]
+    Paying,
+    /// Free-of-charge account; statement requests do not serialize purpose fields.
+    Free,
+    /// Verifying account, restricted to eligible PDF outputs.
+    Verifying,
+}
+
 /// Account-specific authorization fields supplied during generation.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum AccountContext {
     /// An ordinary paying account; no additional XML fields are sent.
     Paying,
@@ -237,6 +249,26 @@ pub enum AccountContext {
         /// Whether `overovaciDolozka` is requested.
         overovaci_dolozka: bool,
     },
+}
+
+impl fmt::Debug for AccountContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Paying => formatter.write_str("Paying"),
+            Self::Free { ucel_kod, .. } => formatter
+                .debug_struct("Free")
+                .field("cislo_jednaci", &"[REDACTED]")
+                .field("ucel_kod", ucel_kod)
+                .finish(),
+            Self::Verifying {
+                overovaci_dolozka, ..
+            } => formatter
+                .debug_struct("Verifying")
+                .field("poradove_cislo", &"[REDACTED]")
+                .field("overovaci_dolozka", overovaci_dolozka)
+                .finish(),
+        }
+    }
 }
 
 impl AccountContext {
@@ -975,7 +1007,7 @@ impl fmt::Debug for RightsRecordIdentifier {
 }
 
 /// Request for `generujEvidenciPravProOsobu`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct RightsRecordRequest {
     /// Natural or legal person (`typ`).
     pub subject_kind: RightsRecordSubjectKind,
@@ -985,6 +1017,18 @@ pub struct RightsRecordRequest {
     pub identifier: RightsRecordIdentifier,
     /// Output and account options.
     pub options: ReportOptions,
+}
+
+impl fmt::Debug for RightsRecordRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RightsRecordRequest")
+            .field("subject_kind", &self.subject_kind)
+            .field("name", &"[REDACTED]")
+            .field("identifier", &self.identifier)
+            .field("options", &self.options)
+            .finish()
+    }
 }
 
 impl RightsRecordRequest {
@@ -1016,6 +1060,8 @@ pub struct AccountStatementRequest {
     pub format: OutputFormat,
     /// XML version selection; the family default is 1.0.
     pub version: ReportVersionSelection,
+    /// Account kind used only for local format validation; no XML field is added.
+    pub account: AccountKind,
 }
 
 impl AccountStatementRequest {
@@ -1026,7 +1072,16 @@ impl AccountStatementRequest {
             to: None,
             format,
             version: ReportVersionSelection::DefaultForFamily,
+            account: AccountKind::Paying,
         }
+    }
+
+    /// Selects the account kind for local PDF-only verification-account checks.
+    ///
+    /// This never adds account authorization elements to `vypisUctu`.
+    pub fn with_account(mut self, account: AccountKind) -> Self {
+        self.account = account;
+        self
     }
 }
 
@@ -1353,6 +1408,13 @@ impl GenerateReport {
                     .validate(&ReportFamily::RightsRecord, false, true)
             }
             Self::AccountStatement(request) => {
+                if request.account == AccountKind::Verifying && request.format != OutputFormat::Pdf
+                {
+                    return Err(Error::invalid_input(
+                        "format",
+                        "verifying accounts may request only PDF account statements",
+                    ));
+                }
                 if request.version == ReportVersionSelection::DefaultForFamily
                     && ReportFamily::AccountStatement.default_version().is_none()
                 {
@@ -1600,15 +1662,16 @@ impl fmt::Display for ReportFormat {
 
 /// Queue and output metadata for one report. Report bytes are deliberately
 /// absent until an explicit approved download.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReportMetadata {
     /// Internal report ID.
     pub id: ReportId,
     /// Server-provided report name.
     pub name: String,
-    /// Number of chargeable units (`pocetJednotek`).
-    pub units: Option<u64>,
+    /// Number of chargeable units (`pocetJednotek`), kept exact despite the XSD's
+    /// unbounded `xs:nonNegativeInteger` range.
+    pub units: Option<Decimal>,
     /// Number of pages (`pocetStran`).
     pub pages: Option<u16>,
     /// Exact current server price. `None` is never treated as free.
@@ -1633,6 +1696,20 @@ pub struct ReportMetadata {
     pub electronic_seal: Option<bool>,
     /// Presence of a timestamp (`casoveRaziko`), not cryptographic verification.
     pub timestamp: Option<bool>,
+}
+
+impl fmt::Debug for ReportMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReportMetadata")
+            .field("id", &self.id)
+            .field("name", &"[REDACTED]")
+            .field("state", &self.state)
+            .field("format", &self.format)
+            .field("version", &self.version)
+            .field("child_count", &self.child_ids.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl ReportMetadata {
@@ -1670,10 +1747,13 @@ impl ReportBatch {
                 .next()
                 .expect("length checked immediately before extraction"))
         } else {
-            Err(Error::invalid_response(format!(
-                "expected one report, received {}",
-                self.reports.len()
-            )))
+            Err(Error::UnexpectedReportBatch {
+                ids: self
+                    .reports
+                    .iter()
+                    .map(|report| report.id.clone())
+                    .collect(),
+            })
         }
     }
 }
@@ -1806,6 +1886,48 @@ mod tests {
     }
 
     #[test]
+    fn request_and_metadata_debug_redact_sensitive_text() {
+        let request = RightsRecordRequest::new(
+            RightsRecordSubjectKind::NaturalPerson,
+            "sensitive-person-name",
+            RightsRecordIdentifier::new("private-id").unwrap(),
+            ReportOptions::xml_default(AccountContext::Free {
+                cislo_jednaci: "sensitive-file-reference".to_owned(),
+                ucel_kod: 1,
+            }),
+        );
+        let request_debug = format!("{request:?}");
+        for sentinel in [
+            "sensitive-person-name",
+            "private-id",
+            "sensitive-file-reference",
+        ] {
+            assert!(!request_debug.contains(sentinel));
+        }
+
+        let metadata = ReportMetadata {
+            id: ReportId::new("123").unwrap(),
+            name: "sensitive-report-name".to_owned(),
+            units: None,
+            pages: None,
+            price: None,
+            requested_at: XmlDateTime::new("2026-01-01T00:00:00Z").unwrap(),
+            started_at: None,
+            created_at: None,
+            parent_id: None,
+            child_ids: Vec::new(),
+            state: ReportState::Charged,
+            format: ReportFormat::Pdf,
+            version: None,
+            electronic_seal: None,
+            timestamp: None,
+        };
+        let metadata_debug = format!("{metadata:?}");
+        assert!(!metadata_debug.contains("sensitive-report-name"));
+        assert!(!metadata_debug.contains("123"));
+    }
+
+    #[test]
     fn report_versions_are_lexical_and_open() {
         assert_eq!(ReportVersion::new("1.0").unwrap(), ReportVersion::V1_0);
         assert_eq!(ReportVersion::new("3.0").unwrap(), ReportVersion::V3_0);
@@ -1891,6 +2013,23 @@ mod tests {
             ReportOptions::xml_default(verifying),
         ));
         assert!(sheet_xml.validate().is_err());
+
+        let statement = GenerateReport::AccountStatement(
+            AccountStatementRequest::new(
+                XmlDateTime::new("2026-01-01T00:00:00Z").unwrap(),
+                OutputFormat::Xml,
+            )
+            .with_account(AccountKind::Verifying),
+        );
+        assert!(statement.validate().is_err());
+        let pdf = GenerateReport::AccountStatement(
+            AccountStatementRequest::new(
+                XmlDateTime::new("2026-01-01T00:00:00Z").unwrap(),
+                OutputFormat::Pdf,
+            )
+            .with_account(AccountKind::Verifying),
+        );
+        assert!(pdf.validate().is_ok());
     }
 
     #[test]

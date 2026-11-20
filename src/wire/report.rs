@@ -527,7 +527,7 @@ pub(crate) fn decode_report_metadata(report: Node<'_, '_>) -> Result<ReportMetad
     let id = parse_id(required_text(report, namespace, "id")?, "report ID")?;
     let name = required_text(report, namespace, "nazev")?;
     let units = optional_text(report, namespace, "pocetJednotek")?
-        .map(|value| parse_number(value.trim(), "report unit count"))
+        .map(parse_units)
         .transpose()?;
     let pages = optional_text(report, namespace, "pocetStran")?
         .map(|value| {
@@ -599,7 +599,22 @@ pub(crate) fn decode_report_metadata(report: Node<'_, '_>) -> Result<ReportMetad
 }
 
 fn parse_id(value: String, field: &'static str) -> Result<ReportId> {
-    ReportId::new(value.trim()).map_err(|_| Error::invalid_response(format!("invalid {field}")))
+    ReportId::new(value.trim_matches([' ', '\t', '\r', '\n']))
+        .map_err(|_| Error::invalid_response(format!("invalid {field}")))
+}
+
+fn parse_units(value: String) -> Result<rust_decimal::Decimal> {
+    let value = value.trim_matches([' ', '\t', '\r', '\n']);
+    let digits = value.strip_prefix('+').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::invalid_response("invalid report unit count"));
+    }
+    crate::model::parse_decimal(value, "report unit count").map_err(|error| match error {
+        Error::DecimalOutOfRange { .. } => Error::DecimalOutOfRange {
+            field: "report unit count",
+        },
+        _ => Error::invalid_response("invalid report unit count"),
+    })
 }
 
 fn parse_number<T>(value: &str, field: &'static str) -> Result<T>
@@ -607,12 +622,13 @@ where
     T: std::str::FromStr,
 {
     value
+        .trim_matches([' ', '\t', '\r', '\n'])
         .parse()
         .map_err(|_| Error::invalid_response(format!("invalid {field}")))
 }
 
 fn parse_timestamp(value: String) -> Result<XmlDateTime> {
-    XmlDateTime::new(value.trim()).map_err(|_| Error::invalid_response("invalid report timestamp"))
+    XmlDateTime::new(value).map_err(|_| Error::invalid_response("invalid report timestamp"))
 }
 
 fn parse_bool(value: &str, field: &'static str) -> Result<bool> {
@@ -1072,7 +1088,7 @@ mod tests {
         assert_eq!(batch.reports.len(), 2);
         let first = &batch.reports[0];
         assert_eq!(first.id.as_str(), "000123");
-        assert_eq!(first.units, Some(12));
+        assert_eq!(first.units, Some(Decimal::from(12)));
         assert_eq!(first.pages, Some(9999));
         assert_eq!(first.price.unwrap().as_decimal(), &Decimal::new(1025, 2));
         assert_eq!(first.requested_at.as_str(), "2026-01-01T01:02:03");
@@ -1105,8 +1121,42 @@ mod tests {
             .into_single_report()
             .unwrap();
         assert_eq!(single.id.as_str(), "000123");
-        assert!(ReportBatch::default().into_single_report().is_err());
-        assert!(batch.into_single_report().is_err());
+        assert_eq!(
+            ReportBatch::default()
+                .into_single_report()
+                .unwrap_err()
+                .report_ids(),
+            Some(&[][..])
+        );
+        let error = batch.into_single_report().unwrap_err();
+        assert_eq!(error.report_ids().unwrap().len(), 2);
+        assert_eq!(error.report_ids().unwrap()[0].as_str(), "000123");
+        assert_eq!(error.report_ids().unwrap()[1].as_str(), "124");
+    }
+
+    #[test]
+    fn report_units_use_exact_unbounded_integer_semantics() {
+        let value = "18446744073709551616"; // u64::MAX + 1
+        let xml = format!(
+            r#"<GenerujSestavuResponse xmlns="{REPORTS_NS}"><reportList><report><id>123</id><nazev>test</nazev><pocetJednotek>{value}</pocetJednotek><datumPozadavku>2026-01-01T00:00:00Z</datumPozadavku><stav>čeká</stav><format>xml</format></report></reportList></GenerujSestavuResponse>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        let batch = decode_report_batch(document.root_element()).unwrap();
+        assert_eq!(
+            batch.reports[0].units,
+            Some(Decimal::from_str(value).unwrap())
+        );
+        let invalid = xml.replace(value, "1.0");
+        let document = Document::parse(&invalid).unwrap();
+        assert!(decode_report_batch(document.root_element()).is_err());
+        let oversized = xml.replace(value, "999999999999999999999999999999999999999");
+        let document = Document::parse(&oversized).unwrap();
+        assert!(matches!(
+            decode_report_batch(document.root_element()),
+            Err(Error::DecimalOutOfRange {
+                field: "report unit count"
+            })
+        ));
     }
 
     #[test]

@@ -4,5 +4,6 @@ pub(crate) mod code_list;
 pub(crate) mod information;
 pub(crate) mod mtom;
 pub(crate) mod report;
+pub(crate) mod reports;
 pub(crate) mod search;
 pub(crate) mod soap;

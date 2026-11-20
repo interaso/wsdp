@@ -103,6 +103,9 @@ pub(crate) fn decode<T>(
     require_tag(envelope, SOAP_NS, "Envelope")?;
     let body = child(envelope, SOAP_NS, "Body")?
         .ok_or_else(|| Error::invalid_response("SOAP Body is missing"))?;
+    if is_nil(body) {
+        return Err(Error::invalid_response("SOAP Body is nil"));
+    }
 
     if let Some(fault) = child(body, SOAP_NS, "Fault")? {
         let code = descendant_text(fault, "faultcode")?.unwrap_or_else(|| "unknown".to_owned());
@@ -114,6 +117,9 @@ pub(crate) fn decode<T>(
     let response = child(body, service.namespace(), operation)?.ok_or_else(|| {
         Error::invalid_response(format!("SOAP Body does not contain {operation}"))
     })?;
+    if is_nil(response) {
+        return Err(Error::invalid_response("WSDP response element is nil"));
+    }
     let messages = decode_messages(response, service.namespace())?;
     if messages
         .iter()
@@ -151,8 +157,17 @@ fn decode_messages(response: Node<'_, '_>, service_ns: &str) -> Result<Vec<Servi
     let Some(result) = child_namespaces(response, &[service_ns, COMMON_NS], "vysledek")? else {
         return Err(Error::invalid_response("WSDP result container is missing"));
     };
-    children(result, COMMON_NS, "zprava")
+    if is_nil(result) {
+        return Err(Error::invalid_response("WSDP result container is nil"));
+    }
+    let messages = result
+        .children()
+        .filter(|node| node.is_element())
         .map(|message| {
+            require_tag(message, COMMON_NS, "zprava")?;
+            if is_nil(message) {
+                return Err(Error::invalid_response("service message is nil"));
+            }
             let code = message
                 .attribute("kod")
                 .ok_or_else(|| Error::invalid_response("service message code is missing"))?;
@@ -165,7 +180,13 @@ fn decode_messages(response: Node<'_, '_>, service_ns: &str) -> Result<Vec<Servi
                 text: simple_content(message, "zprava")?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    if messages.is_empty() {
+        return Err(Error::invalid_response(
+            "WSDP result container has no service message",
+        ));
+    }
+    Ok(messages)
 }
 
 fn preflight(xml: &str, limits: XmlLimits) -> Result<()> {
@@ -306,10 +327,15 @@ pub(crate) fn children<'a, 'input>(
 
 pub(crate) fn is_nil(node: Node<'_, '_>) -> bool {
     node.attribute((XSI_NS, "nil"))
-        .is_some_and(|value| value == "true" || value == "1")
+        .is_some_and(|value| matches!(value.trim_matches([' ', '\t', '\r', '\n']), "true" | "1"))
 }
 
 pub(crate) fn simple_content(node: Node<'_, '_>, name: &str) -> Result<String> {
+    if is_nil(node) {
+        return Err(Error::invalid_response(format!(
+            "XML element {name} is nil"
+        )));
+    }
     let mut content = String::new();
     for child in node.children() {
         if child.is_element() {
@@ -388,6 +414,27 @@ mod tests {
         assert_eq!(response.messages.len(), 2);
         assert_eq!(response.messages[1].code.as_str(), "999999999999999999999");
         assert_eq!(response.messages[1].level.as_str(), "FUTURE");
+    }
+
+    #[test]
+    fn result_messages_are_required_and_cannot_be_nil() {
+        for contents in [
+            r#"<vysledek/>"#,
+            r#"<vysledek xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true"/>"#,
+            r#"<vysledek xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><c:zprava kod="0" uroven="INFORMACE" xsi:nil="true"/></vysledek>"#,
+            r#"<vysledek><c:zprava kod="0" uroven="INFORMACE">ok</c:zprava><zprava kod="477" uroven="CHYBA">wrong namespace</zprava></vysledek>"#,
+        ] {
+            assert!(
+                decode(
+                    envelope(contents).as_bytes(),
+                    ServiceKind::CodeLists,
+                    "StavWSResponse",
+                    LIMITS,
+                    |_| Ok(()),
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

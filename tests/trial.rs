@@ -1,9 +1,10 @@
 //! Opt-in checks against the official shared WSDP trial environment.
 
 use wsdp::{
-    CadastralAreaFilter, Client, CodeListRequest, CodeListResult, Credentials, Environment,
-    ParcelBoundingBoxRequest, ParcelId, ParcelSearch, ParcelSearchSelector, ReportFamily,
-    ReportVersion, ServiceKind,
+    AccountContext, CadastralAreaFilter, ChargeApproval, Client, CodeListRequest, CodeListResult,
+    Credentials, Environment, GenerateReport, ParcelBoundingBoxRequest, ParcelId,
+    ParcelInfoRequest, ParcelSearch, ParcelSearchSelector, ParcelSelector, ReportFamily,
+    ReportFormat, ReportOptions, ReportVersion, ServiceKind, WaitOptions,
 };
 
 fn trial_client() -> Option<Client> {
@@ -101,6 +102,36 @@ async fn parcel_lookup_and_bounding_box() {
             .entries
             .is_some_and(|entries| !entries.is_empty())
     );
+}
+
+#[tokio::test]
+#[ignore = "contacts the shared official WSDP trial environment"]
+async fn raw_report_lifecycle_with_explicit_approval_and_cleanup() {
+    let Some(client) = trial_client() else {
+        panic!("set WSDP_RUN_TRIAL_TESTS=1 and WSDP_TRIAL_USERNAME/PASSWORD");
+    };
+    let batch = client
+        .generate_report(GenerateReport::ParcelInfo(ParcelInfoRequest::new(
+            ParcelSelector::Id(ParcelId::new("2928347306").unwrap()),
+            ReportOptions::xml_default(AccountContext::Paying),
+        )))
+        .await
+        .expect("trial report generation");
+    let metadata = batch.value.into_single_report().expect("one parcel report");
+    let id = metadata.id().clone();
+    let lifecycle = async {
+        let ready = client.wait_for_report(&id, WaitOptions::default()).await?;
+        let downloaded = client.download_report(&id, ChargeApproval::Any).await?;
+        Ok::<_, wsdp::Error>((ready, downloaded))
+    }
+    .await;
+    let cleanup = client.delete_report(&id).await;
+    let (ready, downloaded) = lifecycle.expect("approved trial report lifecycle");
+    assert!(ready.value.state.is_ready());
+    assert_eq!(downloaded.id(), &id);
+    assert_eq!(downloaded.metadata.format, ReportFormat::Xml);
+    assert!(!downloaded.bytes.is_empty());
+    cleanup.expect("delete only the report created by this test");
 }
 
 #[tokio::test]

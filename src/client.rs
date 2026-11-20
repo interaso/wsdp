@@ -1,5 +1,5 @@
 use std::fmt;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -8,19 +8,20 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use secrecy::SecretString;
 use tokio::sync::Semaphore;
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ReportStage, Result};
 use crate::model::{
     AuthorizedSubject, Building, BuildingRight, BuildingRightSearch, BuildingSearch,
-    CodeListRequest, CodeListResult, CollectionDocument, CollectionDocumentSearch, GeometricPlan,
-    GeometricPlanSearch, InformationRequest, InformationResponse, NewPassword,
-    OwnershipSheetPreviewRequest, OwnershipSheetPreviewResponse, Parcel, ParcelBoundingBoxRequest,
-    ParcelBoundingBoxResponse, ParcelSearch, Proceeding, ProceedingSearch, ReportFamily,
-    ReportVersionInfo, Response, SearchRequest, SearchResponse, SearchResult, ServiceKind,
-    ServiceStatus, SubjectSearch, Unit, UnitOverviewRequest, UnitOverviewResponse, UnitSearch,
+    ChargeApproval, CodeListRequest, CodeListResult, CollectionDocument, CollectionDocumentSearch,
+    DownloadedReport, GenerateReport, GeometricPlan, GeometricPlanSearch, InformationRequest,
+    InformationResponse, NewPassword, OwnershipSheetPreviewRequest, OwnershipSheetPreviewResponse,
+    Parcel, ParcelBoundingBoxRequest, ParcelBoundingBoxResponse, ParcelSearch, Proceeding,
+    ProceedingSearch, ReportBatch, ReportFamily, ReportId, ReportMetadata, ReportVersionInfo,
+    Response, SearchRequest, SearchResponse, SearchResult, ServiceKind, ServiceStatus,
+    SubjectSearch, Unit, UnitOverviewRequest, UnitOverviewResponse, UnitSearch, WaitOptions,
     XmlDateTime,
 };
 use crate::wire::soap::{self, XmlLimits, XmlResult};
-use crate::wire::{account, code_list, information, report, search};
+use crate::wire::{account, code_list, information, mtom, report, search};
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -93,6 +94,7 @@ struct ClientInner {
     max_response_bytes: usize,
     xml_limits: XmlLimits,
     permits: Semaphore,
+    generation_last: Mutex<Option<tokio::time::Instant>>,
 }
 
 /// A concurrent, asynchronous WSDP client.
@@ -404,6 +406,282 @@ impl Client {
         .await
     }
 
+    /// Queues a report without waiting or downloading it.
+    ///
+    /// Generation is free. Calls across clones reserve start times at least two
+    /// seconds apart, and no automatic retry is attempted after dispatch.
+    pub async fn generate_report(&self, request: GenerateReport) -> Result<Response<ReportBatch>> {
+        request.validate()?;
+        self.reserve_generation_start().await;
+        let operation = report::operation(&request);
+        let result = self
+            .execute(
+                &operation,
+                |writer| {
+                    report::write_generate(writer, &request).map_err(|error| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, error)
+                    })
+                },
+                report::decode_report_batch,
+            )
+            .await;
+        match result {
+            Err(error @ Error::Service(_)) | Err(error @ Error::Authentication { .. }) => {
+                Err(error)
+            }
+            Err(error @ Error::Transport(_)) if matches!(&error, Error::Transport(source) if source.is_connect()) => {
+                Err(error)
+            }
+            Err(
+                error @ (Error::InvalidInput { .. }
+                | Error::Randomness
+                | Error::CredentialsRequired),
+            ) => Err(error),
+            Err(error) => Err(Error::SubmissionUncertain {
+                source: Box::new(error),
+            }),
+            Ok(response) => Ok(response),
+        }
+    }
+
+    /// Lists all reports or one explicitly selected report using `seznamSestav`.
+    ///
+    /// This free operation never downloads report content and performs no hidden
+    /// pagination or follow-up request.
+    pub async fn list_reports(&self, id: Option<&ReportId>) -> Result<Response<ReportBatch>> {
+        self.execute(
+            &report::list_operation(),
+            |writer| report::write_list(writer, id),
+            report::decode_report_batch,
+        )
+        .await
+    }
+
+    /// Refreshes metadata for one report without downloading it.
+    pub async fn report_status(&self, id: &ReportId) -> Result<Response<ReportMetadata>> {
+        self.refresh_report(id)
+            .await
+            .map_err(|source| report_failure(id, ReportStage::Status, source))
+    }
+
+    async fn refresh_report(&self, id: &ReportId) -> Result<Response<ReportMetadata>> {
+        let response = self
+            .execute(
+                &report::status_operation(),
+                |writer| report::write_status(writer, id),
+                report::decode_report_batch,
+            )
+            .await?;
+        let metadata = response.value.into_single_report()?;
+        if metadata.id() != id {
+            return Err(Error::invalid_response(
+                "report-status ID does not match the requested ID",
+            ));
+        }
+        Ok(Response {
+            value: metadata,
+            messages: response.messages,
+        })
+    }
+
+    /// Waits with bounded status polling only. Dropping the future cancels the
+    /// wait and does not spawn background work.
+    pub async fn wait_for_report(
+        &self,
+        id: &ReportId,
+        options: WaitOptions,
+    ) -> Result<Response<ReportMetadata>> {
+        options
+            .validate()
+            .map_err(|source| report_failure(id, ReportStage::Wait, source))?;
+        if options.max_wait.is_zero() {
+            return Err(report_failure(
+                id,
+                ReportStage::Wait,
+                Error::invalid_input("max_wait", "maximum wait must be greater than zero"),
+            ));
+        }
+        let started = tokio::time::Instant::now();
+        let deadline = started + options.max_wait;
+        let mut next_poll = started + options.initial_delay;
+        let mut interval = options.poll_interval;
+        loop {
+            if next_poll >= deadline {
+                return Err(Error::ReportWaitTimeout { id: id.clone() });
+            }
+            tokio::time::sleep_until(next_poll).await;
+            let response = self
+                .refresh_report(id)
+                .await
+                .map_err(|source| report_failure(id, ReportStage::Wait, source))?;
+            if response.value.state.is_ready() {
+                return Ok(response);
+            }
+            if !response.value.state.is_pending() {
+                return Err(Error::ReportUnavailable {
+                    id: id.clone(),
+                    stage: ReportStage::Wait,
+                });
+            }
+            let now = tokio::time::Instant::now();
+            if let Some(cap) = options.max_poll_interval {
+                interval = interval.saturating_mul(2).min(cap);
+            }
+            next_poll = now + interval;
+        }
+    }
+
+    /// Downloads one ready report after an explicit per-call charge approval.
+    ///
+    /// This performs one free status preflight and, only when its freshly returned
+    /// price is accepted, one `vratSestavu` request. Pending, failed, missing, and
+    /// unknown states are rejected before dispatch. Downloads are never retried.
+    /// Post-dispatch HTTP, transport, size, SOAP/MTOM, and correlation failures
+    /// return [`Error::ChargeUncertain`] with the report ID. An application-level
+    /// `CHYBA` response is an authoritative rejection rather than an uncertain
+    /// transport outcome. Inspect [`Client::report_status`] before any later
+    /// explicit retrieval; never regenerate the report to recover from ambiguity.
+    pub async fn download_report(
+        &self,
+        id: &ReportId,
+        approval: ChargeApproval,
+    ) -> Result<DownloadedReport> {
+        let metadata = self
+            .refresh_report(id)
+            .await
+            .map_err(|source| report_failure(id, ReportStage::Download, source))?
+            .value;
+        if !metadata.state.is_ready() {
+            return Err(Error::ReportUnavailable {
+                id: id.clone(),
+                stage: ReportStage::Download,
+            });
+        }
+        let Some(price) = metadata.price else {
+            return Err(Error::ReportPriceUnavailable { id: id.clone() });
+        };
+        if !approval.accepts(Some(price)) {
+            return Err(Error::ChargeLimitExceeded { id: id.clone() });
+        }
+        self.execute_download(id)
+            .await
+            .map_err(|error| match error {
+                Error::Service(_) => report_failure(id, ReportStage::Download, error),
+                Error::Transport(ref source) if source.is_connect() => {
+                    report_failure(id, ReportStage::Download, error)
+                }
+                Error::InvalidInput { .. } | Error::Randomness | Error::CredentialsRequired => {
+                    report_failure(id, ReportStage::Download, error)
+                }
+                source => Error::ChargeUncertain {
+                    id: id.clone(),
+                    source: Box::new(source),
+                },
+            })
+    }
+
+    async fn execute_download(&self, id: &ReportId) -> Result<DownloadedReport> {
+        let permit = self
+            .inner
+            .permits
+            .acquire()
+            .await
+            .map_err(|_| Error::invalid_input("concurrency", "request limiter is closed"))?;
+        let credentials = {
+            let state = self
+                .inner
+                .credentials
+                .read()
+                .unwrap_or_else(|error| error.into_inner());
+            if state.replacement_required {
+                return Err(Error::CredentialsRequired);
+            }
+            state.credentials.clone()
+        };
+        let operation = report::download_operation();
+        let request = soap::request(
+            operation.request,
+            operation.service.namespace(),
+            &credentials,
+            |writer| report::write_download(writer, id),
+        )?;
+        let url = format!("{}/{}", self.inner.base_url, operation.service.path());
+        let response = self
+            .inner
+            .http
+            .post(url)
+            .header(CONTENT_TYPE, "text/xml; charset=utf-8")
+            .header(ACCEPT, "text/xml, multipart/related")
+            .header("SOAPAction", format!("\"{}\"", operation.action))
+            .body(request)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            let source = if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
+                Error::Authentication {
+                    status: status.as_u16(),
+                }
+            } else {
+                Error::Http {
+                    status: status.as_u16(),
+                }
+            };
+            return Err(source);
+        }
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .ok_or_else(|| Error::invalid_response("report download Content-Type is missing"))?
+            .to_str()
+            .map_err(|_| Error::invalid_response("invalid report download Content-Type"))?
+            .to_owned();
+        let body = read_bounded(response, self.inner.max_response_bytes).await?;
+        let report = mtom::decode_download(
+            &body,
+            &content_type,
+            id,
+            mtom::DownloadLimits {
+                max_decoded_bytes: self.inner.max_response_bytes,
+                xml: self.inner.xml_limits,
+            },
+        );
+        drop(permit);
+        tokio::task::yield_now().await;
+        report
+    }
+
+    /// Explicitly deletes one report. This operation is never retried or called
+    /// automatically by generation, waiting, or download helpers.
+    pub async fn delete_report(&self, id: &ReportId) -> Result<Response<()>> {
+        self.execute(
+            &report::delete_operation(),
+            |writer| report::write_delete(writer, id),
+            report::decode_delete,
+        )
+        .await
+        .map_err(|source| report_failure(id, ReportStage::Delete, source))
+    }
+
+    async fn reserve_generation_start(&self) {
+        let scheduled = {
+            let mut last = self
+                .inner
+                .generation_last
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let now = tokio::time::Instant::now();
+            let scheduled = last
+                .map(|previous| (previous + Duration::from_secs(2)).max(now))
+                .unwrap_or(now);
+            *last = Some(scheduled);
+            scheduled
+        };
+        tokio::time::sleep_until(scheduled).await;
+    }
+
     /// Changes the account password once, without automatic retry.
     ///
     /// Confirmed success updates every clone. A definitive application or
@@ -679,8 +957,17 @@ impl ClientBuilder {
                     max_depth: self.max_xml_depth,
                 },
                 permits: Semaphore::new(self.max_concurrency),
+                generation_last: Mutex::new(None),
             }),
         })
+    }
+}
+
+fn report_failure(id: &ReportId, stage: ReportStage, source: Error) -> Error {
+    Error::ReportOperation {
+        id: id.clone(),
+        stage,
+        source: Box::new(source),
     }
 }
 
@@ -736,8 +1023,41 @@ mod tests {
 
     use super::*;
 
+    fn report_response(id: &str, state: &str) -> String {
+        priced_report_response(id, state, "0")
+    }
+
+    fn priced_report_response(id: &str, state: &str, price: &str) -> String {
+        format!(
+            r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GenerujSestavuResponse xmlns="urn:cz:gov:cuzk:iskn:types:wsdp:sestavy:3.1" xmlns:c="urn:cz:gov:cuzk:iskn:types:common:3.1"><vysledek><c:zprava kod="0" uroven="INFORMACE">ok</c:zprava></vysledek><reportList><report><id>{id}</id><nazev>Test report</nazev><cena>{price}</cena><datumPozadavku>2026-11-20T10:00:00Z</datumPozadavku><stav>{state}</stav><format>xml</format><verze>1.0</verze></report></reportList></GenerujSestavuResponse></soap:Body></soap:Envelope>"#
+        )
+    }
+
+    fn download_response(id: &str, payload: &[u8]) -> String {
+        use base64::Engine as _;
+        let payload = base64::engine::general_purpose::STANDARD.encode(payload);
+        let mut response = report_response(id, "zpracován");
+        response = response.replacen(
+            "</report>",
+            &format!("<souborSestavy>{payload}</souborSestavy></report>"),
+            1,
+        );
+        response.replacen("<stav>zpracován</stav>", "<stav>zaúčtován</stav>", 1)
+    }
+
     fn status_response() -> &'static str {
         r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><StavWSResponse xmlns="urn:cz:gov:cuzk:iskn:types:wsdp:ciselnik:3.1" xmlns:c="urn:cz:gov:cuzk:iskn:types:common:3.1"><vysledek><c:zprava kod="0" uroven="INFORMACE">ok</c:zprava></vysledek><stavSluzby><verze>3.1-test</verze><zpracovano>2026-11-20T10:11:12.123Z</zpracovano></stavSluzby></StavWSResponse></soap:Body></soap:Envelope>"#
+    }
+
+    struct PendingThenReady(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl wiremock::Respond for PendingThenReady {
+        fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
+            use std::sync::atomic::Ordering;
+            let call = self.0.fetch_add(1, Ordering::SeqCst);
+            let state = if call == 0 { "čeká" } else { "zpracován" };
+            ResponseTemplate::new(200).set_body_string(report_response("123", state))
+        }
     }
 
     #[tokio::test]
@@ -807,6 +1127,193 @@ mod tests {
             versions[0].versions,
             vec![crate::ReportVersion::V1_0, crate::ReportVersion::V3_0]
         );
+    }
+
+    #[tokio::test]
+    async fn report_status_correlates_the_requested_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("999", "zpracován")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let id = ReportId::new("123").unwrap();
+        let error = client.report_status(&id).await.unwrap_err();
+        assert_eq!(error.report_id(), Some(&id));
+        assert_eq!(error.report_stage(), Some(ReportStage::Status));
+        assert!(matches!(
+            error,
+            Error::ReportOperation { source, .. }
+                if matches!(*source, Error::InvalidResponse { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn waiting_uses_only_status_until_ready() {
+        let server = MockServer::start().await;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(PendingThenReady(calls.clone()))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let response = client
+            .wait_for_report(
+                &ReportId::new("123").unwrap(),
+                WaitOptions {
+                    initial_delay: Duration::from_millis(1),
+                    poll_interval: Duration::from_millis(1),
+                    max_wait: Duration::from_secs(1),
+                    max_poll_interval: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.value.state, crate::ReportState::Processed);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn generation_pacing_is_shared_across_clones() {
+        use crate::{AccountContext, ParcelId, ParcelInfoRequest, ParcelSelector, ReportOptions};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "čeká")),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let request = || {
+            GenerateReport::ParcelInfo(ParcelInfoRequest::new(
+                ParcelSelector::Id(ParcelId::new("123").unwrap()),
+                ReportOptions::xml_default(AccountContext::Paying),
+            ))
+        };
+        client.generate_report(request()).await.unwrap();
+        let first = *client.inner.generation_last.lock().unwrap();
+        client.clone().generate_report(request()).await.unwrap();
+        let second = *client.inner.generation_last.lock().unwrap();
+        assert_eq!(second.unwrap() - first.unwrap(), Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn approved_download_preflights_price_and_preserves_bytes() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("SeznamSestavRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "zpracován")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("VratSestavuRequest")
+            })
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                download_response("123", b"original\x00report"),
+                "text/xml; charset=utf-8",
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let id = ReportId::new("123").unwrap();
+        let report = client
+            .download_report(&id, ChargeApproval::FreeOnly)
+            .await
+            .unwrap();
+        assert_eq!(report.bytes, Bytes::from_static(b"original\x00report"));
+        assert_eq!(report.metadata.state, crate::ReportState::Charged);
+        assert!(!format!("{report:?}").contains("original"));
+    }
+
+    #[tokio::test]
+    async fn declined_price_never_dispatches_download() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("SeznamSestavRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(priced_report_response(
+                    "123",
+                    "zpracován",
+                    "10.01",
+                )),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("VratSestavuRequest")
+            })
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let id = ReportId::new("123").unwrap();
+        let error = client
+            .download_report(&id, ChargeApproval::up_to("10.00".parse().unwrap()))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::ChargeLimitExceeded { .. }));
+        assert_eq!(error.report_id(), Some(&id));
+        assert_eq!(error.report_stage(), Some(ReportStage::Download));
+        assert!(!error.charge_outcome_uncertain());
+    }
+
+    #[tokio::test]
+    async fn malformed_dispatched_download_is_charge_uncertain() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("SeznamSestavRequest")
+            })
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(report_response("123", "zpracován")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sestavy"))
+            .and(|request: &wiremock::Request| {
+                String::from_utf8_lossy(&request.body).contains("VratSestavuRequest")
+            })
+            .respond_with(ResponseTemplate::new(200).set_body_raw("not XML", "text/xml"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Client::test_client(server.uri());
+        let id = ReportId::new("123").unwrap();
+        let error = client
+            .download_report(&id, ChargeApproval::FreeOnly)
+            .await
+            .unwrap_err();
+        assert!(error.charge_outcome_uncertain());
+        assert_eq!(error.report_id(), Some(&id));
+        assert_eq!(error.report_stage(), Some(ReportStage::Download));
     }
 
     #[tokio::test]

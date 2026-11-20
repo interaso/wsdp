@@ -49,6 +49,18 @@ jobs:
       - name: Verify crate package
         run: cargo package --locked
 
+  msrv:
+    name: Minimum supported Rust version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+      - name: Install Rust 1.89.0
+        uses: dtolnay/rust-toolchain@1.89.0
+      - name: Check all targets and features at MSRV
+        run: cargo check --locked --all-targets --all-features
+
   musl:
     name: Musl build
     runs-on: ubuntu-latest

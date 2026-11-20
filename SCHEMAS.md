@@ -12,6 +12,8 @@ Retrieved on **2026-11-20** from official ČÚZK sources. Builds never download 
 
 The bundled WSDL/XSD files are the primary wire contract. Trial behavior resolves runtime-enabled versions and discrepancies; it never silently overrides the XSD.
 
+Nine anonymized XML documents from `ukazky.zip` are checked in under `tests/fixtures/legacy/` and parsed in full by offline tests. The archive hash above authenticates their source. The official unit example omits the XSD-required `PODLAHOVA_PLOCHA`; the unit parser has a narrow compatibility exception for this one missing field, with no relaxation of other required fields. Synthetic tests cover roots and edge cases absent from the official bundle, including NTR LV, proceeding information, account statements, and proceeding/monthly prices.
+
 ## Legal-relation registries
 
 The [registry index](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z-KN/Ciselniky-ISKN/Ciselniky-pravnich-vztahu-a-listin.aspx#SC_T_PRAVNICH_VZT) reported both registries as updated on **2026-11-20**. Checked-in CSVs under `registry/` are semicolon-delimited Windows-1250 snapshots with LF endings. Reconfirm encoding and shape at each refresh.
@@ -27,4 +29,6 @@ The [registry index](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z
 
 The [official trial page](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-udaju-z-KN/Dalkovy-pristup/Webove-sluzby-DP-na-zkousku.aspx), updated 2026-10-23, documents the endpoint, shared account types, sample data, and limitations. Public trial credentials are recorded in `PLAN.md`; live tests read them from the environment and never use production implicitly.
 
-The monthly price-data schema is [CenoveUdaje 1.0](https://services.cuzk.gov.cz/xsd/cenoveUdaje/1.0/cenoveUdaje.xsd).
+## Monthly price data
+
+The checked-in `schemas/cenoveUdaje/1.0/cenoveUdaje.xsd` is the official [CenoveUdaje 1.0 schema](https://services.cuzk.gov.cz/xsd/cenoveUdaje/1.0/cenoveUdaje.xsd), retrieved 2026-11-20 with SHA-256 `a010e3f53d61ebe450e654af0d202fae952fbdd7fc22b8cc91a7ef593d5c59ff`. Its expanded root is `{http://services.cuzk.cz/xsd/cenoveUdaje/1.0}CenoveUdaje`. The schema imports GML 3.2 and GMD; the parser handles the used `PointPropertyType` structure and preserves association/ownership attributes without downloading external schemas.

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified"
+  targetNamespace="http://services.cuzk.cz/xsd/cenoveUdaje/1.0"
+  xmlns:cu="http://services.cuzk.cz/xsd/cenoveUdaje/1.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+  <xs:import namespace="http://www.opengis.net/gml/3.2"
+    schemaLocation="http://schemas.opengis.net/gml/3.2.1/gml.xsd"/>
+  <xs:import namespace="http://www.isotc211.org/2005/gmd"
+    schemaLocation="http://schemas.opengis.net/iso/19139/20070417/gmd/gmd.xsd"/>
+  <xs:element name="CenoveUdaje" type="cu:CenoveUdajeType"> </xs:element>
+  <xs:complexType name="CenoveUdajeType">
+    <xs:sequence>
+      <xs:element ref="cu:Rizeni" maxOccurs="unbounded" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="bez_mj" use="required">
+      <xs:simpleType>
+        <xs:list>
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="a"/>
+              <xs:enumeration value="n"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:list>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="mesic" use="required">
+      <xs:simpleType>
+        <xs:list>
+          <xs:simpleType>
+            <xs:restriction base="xs:int">
+              <xs:minInclusive value="1"/>
+              <xs:maxInclusive value="12"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:list>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="rok" type="xs:gYear" use="required"/>
+    <xs:attribute name="katuze_kod_cu" type="xs:long" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="CenoveUdajePropertyType">
+    <xs:sequence>
+      <xs:element ref="cu:CenoveUdaje"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="gml:AssociationAttributeGroup"/>
+  </xs:complexType>
+  <xs:element name="Rizeni" type="cu:RizeniType"/>
+  <xs:complexType name="RizeniType">
+    <xs:sequence>
+      <xs:element name="cisloRizeni" type="xs:string"/>
+      <xs:element name="datumPodani" type="xs:dateTime"/>
+      <xs:element name="datumZplatneni" type="xs:dateTime"/>
+      <xs:element name="praresKod" type="xs:int"/>
+      <xs:element name="listiny" type="cu:ListinyPropertyType"/>
+      <xs:element name="nemovitosti" type="cu:NemovitostiPropertyType"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:long" use="required"/>
+  </xs:complexType>
+  <xs:complexType name="ListinyPropertyType">
+    <xs:sequence>
+      <xs:element maxOccurs="unbounded" minOccurs="1" ref="cu:Listina"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="gml:AssociationAttributeGroup"/>
+    <xs:attributeGroup ref="gml:OwnershipAttributeGroup"/>
+  </xs:complexType>
+  <xs:complexType name="NemovitostiPropertyType">
+    <xs:sequence>
+      <xs:element maxOccurs="unbounded" minOccurs="1" ref="cu:Nemovitost"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="gml:AssociationAttributeGroup"/>
+    <xs:attributeGroup ref="gml:OwnershipAttributeGroup"/>
+  </xs:complexType>
+  <xs:element name="Listina" type="cu:ListinaType"/>
+  <xs:complexType name="ListinaType">
+    <xs:sequence>
+      <xs:element name="cena" type="xs:decimal"/>
+      <xs:element name="mena" type="xs:string"/>
+      <xs:element name="listinaTyp" type="xs:string"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:long" use="required"/>
+    <xs:attributeGroup ref="gml:AssociationAttributeGroup"/>
+    <xs:attributeGroup ref="gml:OwnershipAttributeGroup"/>
+  </xs:complexType>
+  <xs:element name="Nemovitost" type="cu:NemovitostType"/>
+  <xs:complexType name="NemovitostType">
+    <xs:complexContent>
+      <xs:extension base="gml:AbstractFeatureType">
+        <xs:sequence>
+          <xs:element name="katuzeKod" type="xs:int"/>
+          <xs:element name="text" type="xs:string" minOccurs="0"/>
+          <xs:element name="popis" type="xs:string" minOccurs="0"/>
+          <xs:element name="bod" type="gml:PointPropertyType" minOccurs="0"/>
+
+          <xs:element name="teleso" type="cu:TelesoPropertyType"/>
+        </xs:sequence>
+        <xs:attribute name="typ" use="required">
+          <xs:simpleType>
+            <xs:list>
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="PAR"/>
+                  <xs:enumeration value="JED"/>
+                  <xs:enumeration value="BUD"/>
+                  <xs:enumeration value="PS"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:list>
+          </xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="id" type="xs:long" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+  <xs:complexType name="TelesoPropertyType">
+    <xs:sequence>
+      <xs:element name="cislo" type="xs:int"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:long"/>
+  </xs:complexType>
+</xs:schema>

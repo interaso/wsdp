@@ -1,5 +1,8 @@
 //! Opt-in checks against the official shared WSDP trial environment.
 
+#[path = "trial/report_matrix.rs"]
+mod report_matrix;
+
 use wsdp::{
     AccountContext, CadastralAreaFilter, ChargeApproval, Client, CodeListRequest, CodeListResult,
     Credentials, Environment, GenerateReport, ParcelBoundingBoxRequest, ParcelId,

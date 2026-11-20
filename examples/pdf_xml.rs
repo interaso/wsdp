@@ -37,13 +37,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    for id in ids {
-        client.wait_for_report(&id, WaitOptions::default()).await?;
+    let mut index = 0;
+    while index < ids.len() {
+        let id = ids[index].clone();
+        index += 1;
+        let ready = client.wait_for_report(&id, WaitOptions::default()).await?;
+        // Child relationships can appear only after generation finishes.
+        for child in ready.value.child_ids {
+            if seen.insert(child.clone()) {
+                ids.push(child);
+            }
+        }
         // This is a fresh approval and price preflight for this one report ID.
         // It does not authorize any other parent or child output.
         let output = client
             .download_report(&id, ChargeApproval::up_to(Czk::from_major_units(10)))
             .await?;
+        if let Some(parent) = &output.metadata.parent_id
+            && seen.insert(parent.clone())
+        {
+            ids.push(parent.clone());
+        }
+        for child in &output.metadata.child_ids {
+            if seen.insert(child.clone()) {
+                ids.push(child.clone());
+            }
+        }
         match output.metadata.format {
             ReportFormat::Pdf => println!("PDF bytes: {}", output.bytes.len()),
             ReportFormat::Xml => {

@@ -38,7 +38,14 @@ Live tests are optional maintainer checks, never part of CI. They may use only t
 
 The official trial page publishes shared account credentials and sample objects. These accounts are shared: never test password changes or authentication lockout, never assume an empty report list, and delete only reports created by the current test. Trial reports are free but use simulated prices, so explicit charge approval is still required.
 
-Production verification is a separate, explicitly requested maintainer step. It requires distinct opt-in, production credentials from a secret manager, explicit object selectors, serial execution, and a small total charge cap. Do not print owner or report contents.
+Production verification is a separate, explicitly requested maintainer step. It requires distinct opt-in, production credentials from a secret manager, explicit object selectors, serial execution, and a small total charge cap. Do not print owner or report contents. The included parcel/building smoke test hard-caps the configured total at 300 CZK and each report download at 50 CZK. A separate parcel PDF+XML generation-policy check performs no downloads. Neither test retries a dispatched operation:
+
+```sh
+set -a; . ./.env; set +a
+WSDP_RUN_PRODUCTION_TESTS=1 cargo test --test production -- --ignored --test-threads=1
+```
+
+The gitignored `.env` supplies `WSDP_PRODUCTION_USERNAME`, `WSDP_PRODUCTION_PASSWORD`, `WSDP_PRODUCTION_PARCEL_ID`, `WSDP_PRODUCTION_BUILDING_ID`, and `WSDP_PRODUCTION_MAX_CZK=300`. Never commit this file.
 
 ## Changelog and releases
 

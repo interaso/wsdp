@@ -814,10 +814,7 @@ fn decode_monthly_properties(node: Node<'_, '_>, xml: &str) -> Result<MonthlyPro
 }
 
 fn decode_monthly_property(node: Node<'_, '_>, xml: &str) -> Result<MonthlyProperty> {
-    let gml_id = required_namespaced_attribute(node, GML_NS, "id")?;
-    if gml_id.is_empty() {
-        return Err(Error::invalid_response("monthly property gml:id is empty"));
-    }
+    let gml_id = optional_nonempty_gml_id(node, "monthly property")?;
     let kinds = required_attribute(node, "typ")?
         .split_whitespace()
         .map(|value| match value {
@@ -838,7 +835,7 @@ fn decode_monthly_property(node: Node<'_, '_>, xml: &str) -> Result<MonthlyPrope
     let body_node = required_child(node, Some(MONTHLY_NS), "teleso")?;
     Ok(MonthlyProperty {
         id: parse_integer(required_attribute(node, "id")?, "Nemovitost/id")?,
-        gml_id: gml_id.to_owned(),
+        gml_id,
         kinds,
         gml_elements,
         cadastral_area_code: required_parse(node, Some(MONTHLY_NS), "katuzeKod")?,
@@ -867,10 +864,7 @@ fn decode_point_property(node: Node<'_, '_>, xml: &str) -> Result<MonthlyPointPr
 }
 
 fn decode_point(node: Node<'_, '_>, xml: &str) -> Result<MonthlyPoint> {
-    let gml_id = required_namespaced_attribute(node, GML_NS, "id")?;
-    if gml_id.is_empty() {
-        return Err(Error::invalid_response("monthly point gml:id is empty"));
-    }
+    let gml_id = optional_nonempty_gml_id(node, "monthly point")?;
     let position = match (
         optional_child(node, Some(GML_NS), "pos")?,
         optional_child(node, Some(GML_NS), "coordinates")?,
@@ -895,7 +889,7 @@ fn decode_point(node: Node<'_, '_>, xml: &str) -> Result<MonthlyPoint> {
         .map(|child| raw_element(child, xml))
         .collect::<Result<Vec<_>>>()?;
     Ok(MonthlyPoint {
-        gml_id: gml_id.to_owned(),
+        gml_id,
         attributes: decode_attributes(node),
         gml_elements,
         position,
@@ -1156,14 +1150,16 @@ fn required_attribute<'a, 'input>(node: Node<'a, 'input>, name: &'static str) ->
         .ok_or_else(|| Error::invalid_response(format!("required attribute {name} is missing")))
 }
 
-fn required_namespaced_attribute<'a, 'input>(
-    node: Node<'a, 'input>,
-    namespace: &'static str,
-    name: &'static str,
-) -> Result<&'a str> {
-    node.attribute((namespace, name)).ok_or_else(|| {
-        Error::invalid_response(format!("required namespaced attribute {name} is missing"))
-    })
+fn optional_nonempty_gml_id(node: Node<'_, '_>, field: &'static str) -> Result<Option<String>> {
+    node.attribute((GML_NS, "id"))
+        .map(|value| {
+            if value.is_empty() {
+                Err(Error::invalid_response(format!("{field} gml:id is empty")))
+            } else {
+                Ok(value.to_owned())
+            }
+        })
+        .transpose()
 }
 
 fn require_tag(
@@ -1704,7 +1700,7 @@ mod tests {
 
         let property = &proceeding.properties.properties[0];
         assert_eq!(property.id, 77);
-        assert_eq!(property.gml_id, "feature-1");
+        assert_eq!(property.gml_id.as_deref(), Some("feature-1"));
         assert_eq!(
             property.kinds,
             vec![
@@ -1741,7 +1737,7 @@ mod tests {
             Some("unknown")
         );
         let point = point_property.point.as_ref().unwrap();
-        assert_eq!(point.gml_id, "point-1");
+        assert_eq!(point.gml_id.as_deref(), Some("point-1"));
         assert_eq!(point.attributes.get(Some(GML_NS), "id"), Some("point-1"));
         assert_eq!(
             point.attributes.get(None, "srsName"),
@@ -1768,6 +1764,34 @@ mod tests {
         assert_eq!(second_data.year, "-0001Z");
         assert_eq!(second_data.cadastral_area_code, -2);
         assert!(second_data.proceedings.is_empty());
+    }
+
+    #[test]
+    fn monthly_gml_ids_follow_the_optional_xsd_attributes() {
+        let missing = monthly_xml(3, "missing IDs")
+            .replace(" gml:id=\"feature-1\"", "")
+            .replace(" gml:id=\"point-1\"", "");
+        let parsed = parse_monthly_prices(missing.as_bytes()).unwrap();
+        let property = &parsed.proceedings[0].properties.properties[0];
+        assert_eq!(property.gml_id, None);
+        assert_eq!(
+            property
+                .point
+                .as_ref()
+                .unwrap()
+                .point
+                .as_ref()
+                .unwrap()
+                .gml_id,
+            None
+        );
+
+        for xml in [
+            monthly_xml(3, "empty feature ID").replace("gml:id=\"feature-1\"", "gml:id=\"\""),
+            monthly_xml(3, "empty point ID").replace("gml:id=\"point-1\"", "gml:id=\"\""),
+        ] {
+            assert!(parse_monthly_prices(xml.as_bytes()).is_err());
+        }
     }
 
     #[test]

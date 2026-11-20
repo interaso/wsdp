@@ -471,8 +471,8 @@ pub struct MonthlyDeed {
 pub struct MonthlyProperty {
     /// Required unqualified monthly `id` (`xs:long`).
     pub id: i64,
-    /// Required `gml:id` from `gml:AbstractGMLType`.
-    pub gml_id: String,
+    /// Optional `gml:id`; the imported XSD does not mark the attribute as required.
+    pub gml_id: Option<String>,
     /// Values of the required `typ` XSD list, in lexical order.
     pub kinds: Vec<MonthlyPropertyKind>,
     /// Inherited GML object/feature elements (`metaDataProperty`, `description`,
@@ -513,8 +513,8 @@ pub struct MonthlyPointProperty {
 /// Inline GML 3.2 point.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MonthlyPoint {
-    /// Required `gml:id`.
-    pub gml_id: String,
+    /// Optional `gml:id`; the imported XSD does not mark the attribute as required.
+    pub gml_id: Option<String>,
     /// All point attributes, including `gml:id` and the SRS attribute group.
     pub attributes: MonthlyXmlAttributes,
     /// Inherited GML object properties in document order, preserved as raw XML.

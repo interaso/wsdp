@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Complete typed legacy/NTR ownership, property, proceeding, rights, account-statement, price, and bounded monthly-ZIP models with original-byte preservation.
 - Fixed-format cadastral-map, collection-document, and geometric-plan PDF workflows with per-output charge approval.
 - Official anonymized report fixtures, lifecycle/search/recovery examples, consumer documentation, and stable/MSRV/musl CI checks.
+- Full opt-in trial report matrix with late parent/child discovery, separately capped production parcel/building smoke tests, and a generation-only PDF+XML policy check.
 - Strict XSD lexical/range validation, exact scientific-coordinate conversion, and non-content debugging for credentials, sensitive queries, service messages, and report payloads.
 
 [Unreleased]: https://github.com/interaso/wsdp/compare/HEAD

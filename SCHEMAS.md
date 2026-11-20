@@ -32,3 +32,5 @@ The [official trial page](https://cuzk.gov.cz/Katastr-nemovitosti/Poskytovani-ud
 ## Monthly price data
 
 The checked-in `schemas/cenoveUdaje/1.0/cenoveUdaje.xsd` is the official [CenoveUdaje 1.0 schema](https://services.cuzk.gov.cz/xsd/cenoveUdaje/1.0/cenoveUdaje.xsd), retrieved 2026-11-20 with SHA-256 `a010e3f53d61ebe450e654af0d202fae952fbdd7fc22b8cc91a7ef593d5c59ff`. Its expanded root is `{http://services.cuzk.cz/xsd/cenoveUdaje/1.0}CenoveUdaje`. The schema imports GML 3.2 and GMD; the parser handles the used `PointPropertyType` structure and preserves association/ownership attributes without downloading external schemas.
+
+Although GML prose recommends `gml:id` on objects, `AbstractGMLType` does not declare the attribute `use="required"`. Monthly feature/point IDs are therefore optional in the public model, and trial data exercises their omission.

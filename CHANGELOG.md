@@ -10,5 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial WSDP 3.1 client foundation, official schema provenance, and public trial configuration.
 - Typed code-list, search, information-view, report-version, and explicit password-change APIs with exact identifiers/decimals and raw-preserving codes.
+- Independently recoverable report generation, status, bounded waiting, deletion, and explicitly approved raw downloads with inline-base64/MTOM support and charge-uncertainty tracking.
 
 [Unreleased]: https://github.com/interaso/wsdp/compare/HEAD

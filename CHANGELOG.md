@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-20
+
 ### Added
 
 - Initial WSDP 3.1 client foundation, official schema provenance, and public trial configuration.
@@ -18,4 +20,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Strict XSD lexical/range validation, exact scientific-coordinate conversion, and non-content debugging for credentials, sensitive queries, service messages, and report payloads.
 - Typed service-message variants for combined formatted/XML errors 527 and 538, with typed `ServiceError` access and raw-preserving fallback for unknown codes.
 
-[Unreleased]: https://github.com/interaso/wsdp/compare/HEAD
+[Unreleased]: https://github.com/interaso/wsdp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/interaso/wsdp/releases/tag/v0.1.0
